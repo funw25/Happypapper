@@ -21,6 +21,7 @@
 | `npm run verify:github` | 14/14（用临时假凭据验证接线）；未配置凭据时 9/9 且退出码 2，AUTH-008 待定 |
 | `npm run verify:github-schema` | 6/6（需先停开发服务器；全程事务回滚，不留数据） |
 | `npm run verify:account` | 31/31（第 13 轮新增，未配置 OAuth 时）；36/36（同一脚本在临时假凭据下运行，额外覆盖绑定授权的跳转与 state 校验） |
+| `npm run verify:load` | 160 个请求 0 个 5xx、无连接错误（第 14 轮新增，需对生产服务器运行；p50 18ms、p95 89ms） |
 | `npm run verify:anchor` | 12/12 |
 | `npm run verify:reader` | 15/15（R1 已修复，连跑 5 次偏差 0.0px） |
 | `npm run verify:settings` | 27/27（第 11 轮新增，覆盖资料、密码、隐私三项与评论署名联动） |
@@ -64,21 +65,25 @@ B8（管理员种子缺少 Florence 与 α）已于第 2 轮完成，B6（远程
 
 | 项 | 状态 |
 | --- | --- |
-| 生产运行时（`npm run start`） | 未验证。全部验证脚本都指向开发服务器，`pdfjs-dist` 客户端打包与 `ssr: false` 动态导入只有「编译通过」的证据 |
+| 生产运行时（`npm run start`） | **已验证（第 14 轮）**。`npm run build` 退出码 0、0 条追踪警告；`npm start` 下 `verify:smoke` 63/63、`verify:settings` 27/27、`verify:load` 160 请求 0 个 5xx，服务端日志为空。首轮验证即抓到并修复了只在生产模式出现的 EMFILE 崩溃 |
 | GitHub OAuth 握手 | 未验证。provider 注册、授权跳转、PKCE 已用假凭据验证（`verify:github` 14/14）；账号绑定的授权跳转与 state 校验也已在假凭据下通过（`verify:account` 36/36）。剩下的只有 GitHub 侧的回调、token 交换与首登建号，需要真实 `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` 加一次浏览器登录 |
 | 解绑保护的「唯一登录方式」分支 | 未触发。`unlinkGithub` 在没有本地密码时返回 409，但要造出「只绑定 GitHub、没有密码」的账号需要真实 GitHub 绑定，因此这条分支只有代码与单元级证据，没有端到端证据 |
 | 邮件投递 | 未接入。`src/lib/mailer.ts` 只实现写日志传输；流程本身（令牌、过期、一次性、页面）已端到端验证，真实投递需要 SMTP 凭据 |
-| `src/lib/storage.ts` 的动态文件系统访问 | 6 条 Turbopack 追踪警告。实测无功能影响（`.next` 67.3 MB、`.next/server` 17.1 MB、`storage/pdfs` 下的 PDF 未被复制进去），未处理 |
+| 真实 PostgreSQL | 未开始（第 14 轮确认环境不可用：本机无 Docker、无 psql，5432 无监听）。代码待办：`src/db/index.ts` 增加 node-postgres 分支、迁移脚本改为对 Postgres 执行、备份改为 `pg_dump`，然后重跑全部验证 |
+| 对象存储 | 未开始。`StorageAdapter` 接口（`put` / `getStream` / `stat` / `delete`）已就位，缺的是桶、凭据与一个 S3 兼容实现；本机磁盘适配器不需要改动 |
+| 真实读者测试 | 未开始，需要 2 至 3 名真实读者 |
 | 通知的实时推送 | 未实现。未读数在页面加载/刷新时读取，没有按用户维度的 SSE 扇出（02-roadmap B2 第 4 点列为设计要点，当前只做到「进入页面可见」） |
 
 ### 2.3 下一步建议顺序
 
-四阶段计划（用户 2026-10-15 定序）：第一阶段补齐产品基础，第二阶段修正论文获取模型，第三阶段完成账号闭环，第四阶段准备公开测试。第一、二阶段已于第 11、12 轮完成，剩余顺序：
+四阶段计划（用户 2026-10-15 定序）：第一阶段补齐产品基础，第二阶段修正论文获取模型，第三阶段完成账号闭环，第四阶段准备公开测试。第一至三阶段已完成（第三阶段的真实 OAuth 握手与邮件投递待用户提供凭据），第四阶段进展如下：
 
 | 顺序 | 阶段 | 内容 | 前置理由 | 预估 |
 | --- | --- | --- | --- | --- |
-| 3 | 第三阶段 | 真实 GitHub OAuth、绑定与解绑保护、密码找回与邮箱验证 | 需要用户提供 GitHub OAuth App 凭据与邮件发送方式，见 B7 | 约 1.5 人日 |
-| 4 | 第四阶段 | 真实 PostgreSQL、对象存储、生产构建与启动验证、备份恢复、真人测试 | 前三阶段的功能面稳定后再迁移数据层 | 约 2 人日 |
+| 4a | 第四阶段 | ~~生产构建与启动验证~~、~~备份与恢复~~ **已于第 14 轮完成** | — | — |
+| 4b | 第四阶段 | 迁移到真实 PostgreSQL | 需要一台可连的 Postgres（本机无 Docker 与 psql，5432 无监听）；拿到连接串后改驱动分支、迁移脚本与备份方式，并重跑全部验证 | 约 0.5 人日 |
+| 4c | 第四阶段 | 对象存储 | 需要桶、凭据与 S3 兼容端点；`StorageAdapter` 接口已就位 | 约 0.5 人日 |
+| 4d | 第四阶段 | 真实读者测试 | 需要 2 至 3 名真实读者；结论决定是否继续做社区、AI 或推荐 | 0.5 人日 |
 
 与 02-roadmap 第 3 节原顺序的差异：原顺序把 B7（GitHub 登录）排在第一位，四阶段计划把它并入第三阶段，先补齐个人资料与隐私这类不依赖外部凭据的产品面。
 
@@ -96,6 +101,31 @@ B8（管理员种子缺少 Florence 与 α）已于第 2 轮完成，B6（远程
 ---
 
 ## 三、工作日志
+
+### 2026-10-16 第 14 轮：第四阶段（准备公开测试）——生产运行时验证、构建警告清理、备份与恢复
+
+**结论：第四阶段中不依赖外部服务的三项完成。** 生产构建 0 警告、`npm start` 下 `verify:smoke` 63/63、`verify:settings` 27/27、新增 `verify:load` 160 请求 0 个 5xx；`db:backup` / `db:restore` 端到端验证（11 张表行数与清单完全一致、篡改能被校验和发现）。**并发现并修复一个只在生产模式出现的崩溃**。
+
+需求依据：`docs/02-roadmap.md` B1 的遗留项（生产运行时无证据、`src/lib/storage.ts` 6 条追踪警告）与 B3（部署与数据可信）。
+
+做了什么：
+
+1. **修掉 production-only 的 EMFILE 崩溃。** `src/db/index.ts` 只在 `NODE_ENV !== "production"` 时缓存 PGlite 实例，而 `db` 是 Proxy，每次属性访问都会调用 `instance()`，于是生产模式下**每次查询**都新建一个 PGlite 实例、重新打开 `pglite.data` 与数据目录。跑几十个请求后 `EMFILE: too many open files`，/admin /me /u/[name] 等页面开始 500，日志里还夹着 Next 的 `client reference manifest ... does not exist` 次生错误。改为所有环境都缓存实例。开发模式看不出来，因为开发分支本来就有缓存。
+2. **清掉 6 条 Turbopack 追踪警告。** `src/lib/storage.ts` 的路径来自 `STORAGE_DIR`，静态分析因此认为整个项目都可能被读取。按 Turbopack 提供的出口给动态调用加 `turbopackIgnore` 标注；顺带把 `safePath` 的前缀比较改为带分隔符（原先 `storage/pdfs-other` 会被当成根目录内部）。构建后：0 警告，`.next` 81 MB、`.next/server` 21 MB，产物里不再包含源码、`docs/` 或 `storage/`（仅剩 Next 自己生成的 `.next/types/*.d.ts`）。
+3. **生产运行时验证。** 停开发服务器 → `npm run build`（退出码 0、TypeScript 通过、25 个静态页面）→ `npm start` → 页面状态码、PDF worker 与构建 chunk 均可访问 → 对生产服务器跑 `verify:smoke` 63/63、`verify:settings` 27/27，服务端日志无错误。
+4. **新增 `scripts/verify-load.mjs`（`npm run verify:load`）。** 对页面、接口、PDF Range、静态资源发起 160 个请求、并发 8，要求无 5xx 与无连接错误，并打印状态分布与 p50/p95/max。存在的理由就是第 1 条：`verify:smoke` 的请求量不足以触发描述符泄漏。
+5. **备份与恢复。** `scripts/db-backup.mjs` 复制 PGlite 数据目录与 `storage/pdfs` 并写出 `manifest.json`（逐文件 SHA-256 与各表行数）；`scripts/db-restore.mjs` 默认预演（只校验、不改数据），`--apply` 才写入，目标非空要 `--force`，覆盖前把原目录改名为 `.<时间戳>` 保留。两个脚本都在 3100 端口有监听时拒绝执行。
+
+验证证据：
+
+- 生产模式下 `verify:smoke` 63/63、`verify:settings` 27/27、`verify:load` 160 个请求 0 个 5xx（p50 18ms、p95 89ms、max 99ms），生产服务器日志为空。
+- 备份：1039 个数据库文件 + 7 个 PDF，清单记录 `users=61 papers=4 comments=284 …`。
+- 恢复：`--from` 预演校验通过；把备份里一个 PDF 追加 1 字节后预演退出码 1 并指出该文件大小不符；恢复到临时目录后用 PGlite 打开逐表比对，11 张表行数与清单完全一致。
+- 有服务运行时 `npm run db:backup` 退出码 2 并说明原因。
+
+**为什么这一轮值得单列。** 前三阶段的验证全部跑在开发服务器上，"生产运行时未验证" 在 2.2 节挂了四轮。第一次真正 `npm start` 就撞上崩溃，而且崩溃点在数据库连接层——不跑生产模式永远看不到。
+
+**本轮遗留。** 真实 PostgreSQL 与对象存储需要外部资源（本机没有 Docker、psql，5432 无监听）：拿到连接串后要做的是 `src/db/index.ts` 增加 node-postgres 分支、迁移脚本改为对 Postgres 执行、`pg_dump` 备份，并重跑全部验证；对象存储同理，`StorageAdapter` 接口已经在，缺的是桶与凭据。真实读者测试需要人。见 2.2 / 2.3 节。
 
 ### 2026-10-16 第 13 轮：第三阶段（账号闭环）——邮箱验证、修改邮箱、密码找回、GitHub 绑定与解绑保护
 

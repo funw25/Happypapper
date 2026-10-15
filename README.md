@@ -83,6 +83,7 @@ npm run typecheck             # tsc --noEmit
 | `verify:reader` | 真实浏览器：登录后打开阅读器，确认画布与文本层渲染、在文本层建立选区并转成锚点草稿、发布评论、服务端保存引用与前后文，**刷新后位置标记偏差 0.0px**、**缩放到 160% 后标记仍跟随文本**、无前端异常 |
 | `verify:settings` | `/settings/profile`、`/settings/account`、`/settings/privacy` 三个页面可访问且未登录被重定向；昵称、头像、简介保存后刷新仍在；占用他人昵称返回 409、过短昵称 400、非 http 头像地址 400；三个隐私开关保存后刷新生效；默认匿名设置使新评论的署名在接口响应里就是 `null` 且 `isAnonymous` 为真；关闭弹幕后新评论 `visibleInDanmaku` 为假；关闭主页评论后公开主页不列评论并给出说明；显式取消匿名时按公开昵称署名；密码修改的三种结果（当前密码错误 403、新密码过短 400、正确 200）与用新密码重新登录；结束时还原资料、隐私设置与密码 |
 | `verify:theme` | 真实浏览器：设置页出现三态主题控件；浅色与深色下 `<html data-theme>`、页面背景与文字颜色、卡片表面色实际互换且深色卡片不是白底；刷新后仍保持已选主题；模拟系统深色时「跟随系统」解析为深色、系统改为浅色后无需改设置即跟随；论文库页沿用同一主题。截图输出到 `.verify/screenshots/` |
+| `verify:load` | 生产运行时负载回归：对页面、接口、PDF Range、静态资源共 160 个请求、并发 8，要求无 5xx、无连接错误，并打印状态分布与 p50/p95/max 延迟。用来盯住「文件描述符或数据库实例随请求增长」这类只有生产模式才暴露的问题 |
 
 `verify:search` 与 `verify:smoke` 分开，原因是每次检索会向上游 OpenAlex 发两个请求，而 OpenAlex 按 IP 限流（实测会回 `Retry-After: 24511`，约 6.8 小时）。把它放进主基线会让基线依赖一个有速率限制的外部服务。脚本内两次检索之间默认间隔 1200ms，可用 `SEARCH_GAP_MS` 调大；上游不可用时退出码 2，表示结论待定而不是代码回归。接口区分三类失败：`UPSTREAM_RATE_LIMITED`（上游限流）、`UPSTREAM_UNAVAILABLE`（上游故障或超时）、`SEARCH_RATE_LIMITED`（本项目的限流，回 429 并带 `Retry-After`），三者都会在有缓存时回退展示缓存结果并在响应里标记 `stale`。
 
@@ -93,6 +94,40 @@ npm run typecheck             # tsc --noEmit
 **脚本之间有配额冲突**：`verify:smoke`、`verify:notify`、`verify:reader` 都会发布评论，而应用的限流是每账号 60 秒 5 条。`verify:smoke` 自己就会把 reader 的配额用满（它有一条专门测限流的检查），所以这几个脚本不能在 60 秒内连跑。触发时它们打印说明并以退出码 2 结束，表示结论待定而不是回归。
 
 冒烟测试默认导入 arXiv `1706.03762`。换一篇用 `SMOKE_IDENTIFIER` 覆盖。
+
+## 生产验证与备份
+
+**生产构建与启动（四条命令，按顺序）。** 生产模式与开发模式的行为不是一回事，2026-10-16 就是在这里抓到一次只在 `npm start` 下出现的崩溃。
+
+```bash
+# 1. 停开发服务器：PGlite 同一时刻只允许一个进程打开数据目录
+# 2. 构建
+npm run build          # 期望：退出码 0，0 条 tracing 警告，TypeScript 检查通过
+# 3. 启动
+npm start              # http://localhost:3100
+# 4. 另一终端跑验证
+npm run verify:smoke   # 63/63
+npm run verify:settings # 27/27
+npm run verify:load    # 160 个请求，无 5xx
+```
+
+抓到的问题：开发服务器把 PGlite 实例缓存在模块作用域，生产分支没有缓存，于是**每次查询**都新建一个实例、重新打开 `pglite.data` 与数据目录，几十个请求后 `EMFILE: too many open files`，页面开始 500，并连带出现 `client reference manifest ... does not exist` 之类的次生错误。`verify:smoke` 单独跑不到那个请求量，所以加了 `verify:load` 作为回归闸门。构建产物里不再包含源码或 `storage/`（`src/lib/storage.ts` 的 `turbopackIgnore` 标注），`.next` 合计 81 MB、`.next/server` 21 MB。
+
+**备份与恢复。**
+
+```bash
+npm run db:backup                                   # 备份到 backups/<UTC 时间戳>/
+node scripts/db-restore.mjs --from backups/2026-10-16_09-30-00          # 预演：只校验
+node scripts/db-restore.mjs --from backups/... --apply [--force]        # 真正写入
+```
+
+备份内容为 PGlite 数据目录与 `storage/pdfs`，外加一份 `manifest.json`（逐文件大小与 SHA-256、各表行数）。三条约束：
+
+1. **先停服务。** 两个脚本都会检测 3100 端口，有服务在跑时备份直接拒绝（运行中的 WAL 可能让备份在恢复时打不开）。
+2. **预演是默认行为。** 不加 `--apply` 只核对校验和与行数，不改任何数据；目标目录非空时还要 `--force`。
+3. **覆盖前先留退路。** 写入时把原目录改名为 `<目录>.before-restore-<时间戳>` 而不是删除。
+
+`PGLITE_DATA_DIR` 与 `STORAGE_DIR` 可覆盖，因此可以恢复到别处做检查而不动线上数据。迁移到真实 PostgreSQL 后，数据库部分换成 `pg_dump` / `pg_restore`，"先停服务 + 清单 + 校验和" 这三条不变。
 
 ## 目录
 

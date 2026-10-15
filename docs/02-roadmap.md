@@ -66,6 +66,7 @@ MVP 已按 `00-mvp-spec.md` 冻结的范围实现完毕，四个验证脚本全�
 | 编号 | 状态 | 目标 | 交付物 | 验收命令 | 预估 |
 | --- | --- | --- | --- | --- | --- |
 | B1 | 完成 | 生产构建可用 | `next build` 通过 | `npm run build` | 0.5 人日 |
+| B1 余项 | 完成 | 生产运行时与构建产物 | `npm start` 下功能可用、0 条追踪警告、备份与恢复可用 | `npm run verify:load`、`npm run verify:smoke`（对生产服务器）、`npm run db:backup` + `node scripts/db-restore.mjs --from …` | 0.5 人日 |
 | B2 | 完成 | 回复通知 | 被回复者能看到通知 | `npm run verify:notify` | 1 人日 |
 | B3 | 未开始 | 部署与迁移到真实 Postgres | 公网可访问的实例 | 三个验证脚本跑在远端 | 1 人日 |
 | B4 | 未开始 | 密码找回 | 忘记密码可自助恢复 | 冒烟测试新增两项 | 0.5 人日 |

@@ -26,10 +26,13 @@ function instance(): Db {
   // the next start, which then needs `npm run db:reset`.
   const existing = globalForDb.__hpDb;
   if (existing) return existing;
+  // Cached in production too. Without this, every property access on `db` — that
+  // is, every query — built a new PGlite instance, each opening `pglite.data`
+  // and the data directory again. A production server died with
+  // `EMFILE: too many open files` after a few dozen requests; the dev server
+  // never showed it because the cache used to be dev-only.
   const created = createDb();
-  if (process.env.NODE_ENV !== "production") {
-    globalForDb.__hpDb = created;
-  }
+  globalForDb.__hpDb = created;
   return created;
 }
 
