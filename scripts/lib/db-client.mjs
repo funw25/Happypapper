@@ -1,0 +1,58 @@
+import { mkdir } from "node:fs/promises";
+
+/**
+ * 脚本侧的数据库连接：同一套 `query` / `exec` 接口，背后按 `DATABASE_URL` 选择
+ * node-postgres 或 PGlite。
+ *
+ * 应用本身走 `src/db/index.ts`，两者共用同一个环境变量，因此「配了 DATABASE_URL
+ * 就用真实 Postgres」在脚本与应用里是同一条规则。
+ */
+export function databaseUrl() {
+  const url = process.env.DATABASE_URL?.trim();
+  return url ? url : null;
+}
+
+export function usingPostgres() {
+  return databaseUrl() !== null;
+}
+
+export function pgliteDataDir() {
+  return process.env.PGLITE_DATA_DIR ?? "../happypaper-data/pgdata";
+}
+
+export async function openRawClient() {
+  const url = databaseUrl();
+  if (url) {
+    const { default: pg } = await import("pg");
+    const client = new pg.Client({ connectionString: url });
+    await client.connect();
+    return {
+      kind: "postgres",
+      query: (sql, params = []) => client.query(sql, params),
+      // 迁移文件是多条语句的脚本，Postgres 的简单查询协议可以一次执行完。
+      exec: (sql) => client.query(sql),
+      close: () => client.end(),
+    };
+  }
+
+  const { PGlite } = await import("@electric-sql/pglite");
+  const dataDir = pgliteDataDir();
+  await mkdir(dataDir, { recursive: true });
+  const db = new PGlite(dataDir);
+  await db.waitReady;
+  return {
+    kind: "pglite",
+    query: (sql, params = []) => db.query(sql, params),
+    exec: (sql) => db.exec(sql),
+    close: () => db.close(),
+  };
+}
+
+/** 打印当前用的是哪一个后端，避免脚本跑错库还看不出来。 */
+export function describeBackend() {
+  if (usingPostgres()) {
+    const redacted = databaseUrl().replace(/:\/\/([^:]+):[^@]*@/, "://$1:***@");
+    return `PostgreSQL（${redacted}）`;
+  }
+  return `PGlite（${pgliteDataDir()}）`;
+}

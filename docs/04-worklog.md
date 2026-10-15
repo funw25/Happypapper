@@ -69,7 +69,7 @@ B8（管理员种子缺少 Florence 与 α）已于第 2 轮完成，B6（远程
 | GitHub OAuth 握手 | 未验证。provider 注册、授权跳转、PKCE 已用假凭据验证（`verify:github` 14/14）；账号绑定的授权跳转与 state 校验也已在假凭据下通过（`verify:account` 36/36）。剩下的只有 GitHub 侧的回调、token 交换与首登建号，需要真实 `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` 加一次浏览器登录 |
 | 解绑保护的「唯一登录方式」分支 | 未触发。`unlinkGithub` 在没有本地密码时返回 409，但要造出「只绑定 GitHub、没有密码」的账号需要真实 GitHub 绑定，因此这条分支只有代码与单元级证据，没有端到端证据 |
 | 邮件投递 | 未接入。`src/lib/mailer.ts` 只实现写日志传输；流程本身（令牌、过期、一次性、页面）已端到端验证，真实投递需要 SMTP 凭据 |
-| 真实 PostgreSQL | 未开始（第 14 轮确认环境不可用：本机无 Docker、无 psql，5432 无监听）。代码待办：`src/db/index.ts` 增加 node-postgres 分支、迁移脚本改为对 Postgres 执行、备份改为 `pg_dump`，然后重跑全部验证 |
+| 真实 PostgreSQL | **代码已完成并在真实 Postgres 上验证（第 15 轮）**：`DATABASE_URL` 切换后端、迁移/种子/重置脚本双后端、`npm run pg:start` 本地起真实 Postgres 18，`verify:smoke` 63/63、`verify:settings` 27/27、`verify:account` 31/31。仍缺：用户自己的生产实例（托管服务的连接串参数、TLS、连接数上限与本地二进制不同），以及 Postgres 侧的 `pg_dump` 备份演练 |
 | 对象存储 | 未开始。`StorageAdapter` 接口（`put` / `getStream` / `stat` / `delete`）已就位，缺的是桶、凭据与一个 S3 兼容实现；本机磁盘适配器不需要改动 |
 | 真实读者测试 | 未开始，需要 2 至 3 名真实读者 |
 | 通知的实时推送 | 未实现。未读数在页面加载/刷新时读取，没有按用户维度的 SSE 扇出（02-roadmap B2 第 4 点列为设计要点，当前只做到「进入页面可见」） |
@@ -81,7 +81,7 @@ B8（管理员种子缺少 Florence 与 α）已于第 2 轮完成，B6（远程
 | 顺序 | 阶段 | 内容 | 前置理由 | 预估 |
 | --- | --- | --- | --- | --- |
 | 4a | 第四阶段 | ~~生产构建与启动验证~~、~~备份与恢复~~ **已于第 14 轮完成** | — | — |
-| 4b | 第四阶段 | 迁移到真实 PostgreSQL | 需要一台可连的 Postgres（本机无 Docker 与 psql，5432 无监听）；拿到连接串后改驱动分支、迁移脚本与备份方式，并重跑全部验证 | 约 0.5 人日 |
+| 4b | 第四阶段 | ~~迁移到真实 PostgreSQL~~ **代码与本地真实 Postgres 验证已于第 15 轮完成**；剩余是用户自己的生产实例与 `pg_dump` 演练 | 托管 Postgres 的连接串、TLS 与连接数上限与本地二进制不同，需要真实环境复测 | 约 0.25 人日 |
 | 4c | 第四阶段 | 对象存储 | 需要桶、凭据与 S3 兼容端点；`StorageAdapter` 接口已就位 | 约 0.5 人日 |
 | 4d | 第四阶段 | 真实读者测试 | 需要 2 至 3 名真实读者；结论决定是否继续做社区、AI 或推荐 | 0.5 人日 |
 
@@ -101,6 +101,36 @@ B8（管理员种子缺少 Florence 与 α）已于第 2 轮完成，B6（远程
 ---
 
 ## 三、工作日志
+
+### 2026-10-16 第 15 轮：第四阶段——真实 PostgreSQL 支持与本地验证
+
+**结论：应用现在支持 `DATABASE_URL` 指向真实 PostgreSQL，并在真实 PostgreSQL 18.4 上跑通全部验证。** `verify:smoke` 63/63、`verify:settings` 27/27、`verify:account` 31/31 全部对着 Postgres 执行；9 个迁移全部应用且重跑幂等；切回默认 Pglite 后原有数据未受影响。
+
+需求依据：`docs/02-roadmap.md` B3「部署与迁移到真实 Postgres」。上一轮确认本机没有 Docker、psql 且 5432 无监听，因此这一轮先解决「没有服务器就没法验证」这个问题。
+
+做了什么：
+
+1. 后端选择：`src/db/index.ts` 按 `DATABASE_URL` 选 node-postgres 连接池或 PGlite，其它代码一行不改。`next.config.mjs` 的 `serverExternalPackages` 加上 `pg`（它要开 socket、加载可选原生模块，不该被打包）。
+2. 脚本层：新增 `scripts/lib/db-client.mjs`，同一套 `query` / `exec` 接口背后按同一个环境变量选驱动；`db-migrate` / `db-seed` / `db-reset` 改为用它。迁移文件一批手写 SQL 两边共用，Postgres 下 `db:reset` 重建 `public` schema 而不是删目录。
+3. 备份的边界写清楚：`db:backup` 检测到 `DATABASE_URL` 时不再尝试复制数据目录（真实部署里复制目录是错的：版本不能互换、会漏掉并发快照与权限），而是打印该用的 `pg_dump` / `pg_restore` 命令并以退出码 2 结束。
+4. 本地验证设施：`npm run pg:start` 用 embedded-postgres 起一个真实 PostgreSQL 18（官方二进制随包分发，数据在 `.pgdata-dev/`，已加进 .gitignore），因此「迁移能不能在真实 Postgres 上跑」这类问题不再靠读代码判断。生产不经过它。
+
+验证证据：
+
+| 项 | 结果 |
+| --- | --- |
+| `db:migrate`（Postgres） | 9 个迁移全部应用；再跑一次 0 个迁移（幂等） |
+| `db:seed`（Postgres） | 4 个种子账号 + 5 个敏感词写入成功 |
+| `verify:smoke`（应用连 Postgres） | 63/63，含导入论文、PDF Range、评论、举报、管理操作 |
+| `verify:settings`（Postgres） | 27/27 |
+| `verify:account`（Postgres） | 31/31，含邮箱验证、改邮箱、密码找回 |
+| 行数核对 | Postgres 中 `users=6 papers=1 comments=11 reports=1`；`select version()` 返回 PostgreSQL 18.4 |
+| 切回 PGlite | 默认后端启动正常，原有 4 篇论文与评论仍在（两套数据互不影响） |
+| `db:backup` + `DATABASE_URL` | 退出码 2，打印 `pg_dump --format=custom` 与 `pg_restore` 命令 |
+
+**一处刻意的取舍。** Postgres 的备份/恢复没有写成脚本：本机没有 `pg_dump`（embedded-postgres 只带服务器与少数工具），而写一个无法验证的备份分支比不写更危险。改为在 `db:backup` 里直接给出该执行的命令。
+
+**本轮遗留。** 生产实例仍需要用户提供（本地验证用的是随包分发的二进制，不等于部署环境：托管 Postgres 的连接串参数、TLS、连接数上限都可能不同）；对象存储与真实读者测试同样需要外部资源。见 2.2 / 2.3 节。
 
 ### 2026-10-16 第 14 轮：第四阶段（准备公开测试）——生产运行时验证、构建警告清理、备份与恢复
 

@@ -11,7 +11,10 @@ const nextConfig = {
   // shim, not a Node URL. fs rejects it with ERR_INVALID_ARG_TYPE, PGlite aborts
   // and the production build cannot initialise the database. Keeping the package
   // external leaves import.meta.url and URL intact at runtime.
-  serverExternalPackages: ["@electric-sql/pglite"],
+  //
+  // `pg` is external for the same reason: it loads native/optional modules and
+  // opens sockets, so a bundled copy is not what should run in production.
+  serverExternalPackages: ["@electric-sql/pglite", "pg"],
 };
 
 export default nextConfig;

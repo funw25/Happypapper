@@ -14,12 +14,31 @@
 import { createHash } from "node:crypto";
 import { cp, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
-import { PGlite } from "@electric-sql/pglite";
+import { databaseUrl, openRawClient, pgliteDataDir, usingPostgres } from "./lib/db-client.mjs";
 
-const dataDir = resolve(process.env.PGLITE_DATA_DIR ?? "../happypaper-data/pgdata");
 const storageDir = resolve(process.env.STORAGE_DIR ?? "./storage/pdfs");
 const stamp = new Date().toISOString().replace(/[:.]/g, "-").replace("T", "_").slice(0, 19);
 const backupRoot = resolve(process.env.BACKUP_DIR ?? "backups", stamp);
+
+// PostgreSQL 的备份要交给 pg_dump：逻辑转储涉及权限、序列、扩展与并发快照，
+// 复制数据目录在真实部署里是错的（而且版本之间不能互换）。
+if (usingPostgres()) {
+  const url = new URL(databaseUrl());
+  console.error(
+    [
+      `检测到 DATABASE_URL，当前指向 ${url.host}${url.pathname}。`,
+      "PostgreSQL 请用 pg_dump，本脚本只负责 PGlite 的数据目录：",
+      "",
+      `  pg_dump --format=custom --file=backups/${stamp}.dump "${databaseUrl().replace(/:\/\/([^:]+):[^@]*@/, "://$1:***@")}"`,
+      `  pg_restore --clean --if-exists --dbname="<目标库>" "backups/${stamp}.dump"`,
+      "",
+      "PDF 目录仍然可以直接复制：storage/pdfs 与数据库无耦合。",
+    ].join("\n"),
+  );
+  process.exit(2);
+}
+
+const dataDir = resolve(pgliteDataDir());
 
 const COUNTED_TABLES = [
   "users",
@@ -79,18 +98,17 @@ console.log(`PDF 目录：${storageDir}`);
 console.log(`备份目标：${backupRoot}`);
 
 // 表计数在停服状态下直接读一次，便于恢复后对照。
-const db = new PGlite(dataDir);
-await db.waitReady;
+const client = await openRawClient();
 const counts = {};
 for (const table of COUNTED_TABLES) {
   try {
-    const result = await db.query(`select count(*)::int as n from "${table}"`);
+    const result = await client.query(`select count(*)::int as n from "${table}"`);
     counts[table] = result.rows[0].n;
   } catch {
     counts[table] = null;
   }
 }
-await db.close();
+await client.close();
 
 await mkdir(backupRoot, { recursive: true });
 await cp(dataDir, join(backupRoot, "pgdata"), { recursive: true });

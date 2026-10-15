@@ -27,6 +27,28 @@ npm run dev                    # http://localhost:3100
 | florence@happypaper.com | florence12345 | 管理员（Florence） |
 | alpha@happypaper.com | alpha12345 | 管理员（α） |
 
+## 数据库后端
+
+后端由 `DATABASE_URL` 决定，schema、迁移文件与查询代码两边完全一样：
+
+| 环境变量 | 后端 | 用途 |
+| --- | --- | --- |
+| 不设置 | PGlite（数据目录 `PGLITE_DATA_DIR`，默认 `../happypaper-data/pgdata`） | 本地开发与全部验证脚本的默认形态，不需要装数据库 |
+| `DATABASE_URL=postgres://…` | 真实 PostgreSQL（`pg` 连接池） | 部署形态 |
+
+`npm run db:migrate` / `db:seed` / `db:reset` 都按这个规则选后端：PGlite 下 reset 删数据目录，Postgres 下 reset 重建 `public` schema。备份不同：PGlite 用 `npm run db:backup`，Postgres 用 `pg_dump`（`db:backup` 检测到 `DATABASE_URL` 时会直接打印该用的命令并退出，不会生成一份错的备份）。
+
+**本地想用真实 Postgres 验证**，不必先装数据库：
+
+```bash
+npm run pg:start     # 前台起一个真实 PostgreSQL 18（embedded-postgres，数据在 .pgdata-dev/）
+# 另一个终端：
+$env:DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:5433/happypaper"
+npm run db:migrate ; npm run db:seed ; npm run dev
+```
+
+`pg:start` 只是本地验证工具，生产不经过它。**已验证**（2026-10-16，PostgreSQL 18.4）：9 个迁移全部应用且重跑幂等、种子账号写入成功、`verify:smoke` 63/63、`verify:settings` 27/27、`verify:account` 31/31 全部对着真实 Postgres 跑通，数据确认落在 Postgres 表中；切回默认 PGlite 后原有 4 篇论文与评论未受影响。
+
 ### 环境注意
 
 1. **数据库不在项目目录内。** 数据目录由 `PGLITE_DATA_DIR` 指定，默认 `../happypaper-data/pgdata`，即仓库旁边。原因是 Next.js 开发服务器会监视项目树，而 Postgres 每次查询都会写 WAL 与统计文件；数据库放在项目内会形成「写文件 → 重新编译 → 页面重载 → 再查询」的死循环。

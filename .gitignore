@@ -13,3 +13,6 @@ next-env.d.ts
 
 # 备份产物（npm run db:backup）
 backups
+
+# 本地嵌入式 Postgres 的数据目录（npm run pg:start）
+.pgdata-dev

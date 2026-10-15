@@ -1,16 +1,29 @@
 import { PGlite } from "@electric-sql/pglite";
-import { drizzle } from "drizzle-orm/pglite";
+import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
+import { drizzle as drizzleNodePostgres } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
 import { PgDatabase } from "drizzle-orm/pg-core";
 import { mkdirSync } from "node:fs";
 import * as schema from "./schema";
 
+/**
+ * 数据库后端由 `DATABASE_URL` 决定：有就是真实 PostgreSQL（部署形态），没有就是
+ * 进程内的 PGlite（本地开发与验证形态）。两边的 schema 完全一样，迁移文件是同一批
+ * 手写 SQL，因此切换后端不需要改任何查询代码。
+ */
 function createDb() {
+  const url = process.env.DATABASE_URL?.trim();
+  if (url) {
+    const pool = new Pool({ connectionString: url, max: 10 });
+    return drizzleNodePostgres(pool, { schema });
+  }
+
   // Kept outside the project tree: the dev watcher would otherwise treat every
   // Postgres write as a source change. See .env.local.
   const dataDir = process.env.PGLITE_DATA_DIR ?? "../happypaper-data/pgdata";
   mkdirSync(dataDir, { recursive: true });
   const client = new PGlite(dataDir);
-  return drizzle(client, { schema });
+  return drizzlePglite(client, { schema });
 }
 
 type Db = ReturnType<typeof createDb>;

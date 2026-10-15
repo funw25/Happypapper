@@ -1,14 +1,14 @@
 /**
  * Creates the local accounts and the starter banned-word list.
  * Safe to re-run: existing rows are left untouched.
+ *
+ * Works on both backends; see scripts/lib/db-client.mjs.
  */
-import { PGlite } from "@electric-sql/pglite";
 import bcrypt from "bcryptjs";
-import { mkdir } from "node:fs/promises";
+import { describeBackend, openRawClient } from "./lib/db-client.mjs";
 
-const dataDir = process.env.PGLITE_DATA_DIR ?? "../happypaper-data/pgdata";
-await mkdir(dataDir, { recursive: true });
-const db = new PGlite(dataDir);
+const client = await openRawClient();
+console.log(`目标：${describeBackend()}`);
 
 const accounts = [
   { email: "admin@happypaper.local", name: "admin", password: "admin12345", role: "admin" },
@@ -20,13 +20,13 @@ const accounts = [
 ];
 
 for (const account of accounts) {
-  const exists = await db.query(`select 1 from "users" where "email" = $1`, [account.email]);
+  const exists = await client.query(`select 1 from "users" where "email" = $1`, [account.email]);
   if (exists.rows.length > 0) {
     console.log(`skip ${account.email} (exists)`);
     continue;
   }
   const passwordHash = await bcrypt.hash(account.password, 10);
-  await db.query(
+  await client.query(
     `insert into "users" ("email", "name", "password_hash", "role") values ($1, $2, $3, $4)`,
     [account.email, account.name, passwordHash, account.role],
   );
@@ -35,8 +35,8 @@ for (const account of accounts) {
 
 const words = ["广告", "代写", "加微信", "私聊", "刷单"];
 for (const word of words) {
-  await db.query(`insert into "banned_words" ("word") values ($1) on conflict do nothing`, [word]);
+  await client.query(`insert into "banned_words" ("word") values ($1) on conflict do nothing`, [word]);
 }
 console.log(`banned words: ${words.length}`);
 
-await db.close();
+await client.close();

@@ -10,6 +10,7 @@
     "db:migrate": "node --env-file-if-exists=.env.local scripts/db-migrate.mjs",
     "db:seed": "node --env-file-if-exists=.env.local scripts/db-seed.mjs",
     "db:reset": "node --env-file-if-exists=.env.local scripts/db-reset.mjs",
+    "pg:start": "node scripts/pg-start.mjs",
     "db:backup": "node --env-file-if-exists=.env.local scripts/db-backup.mjs",
     "db:restore": "node --env-file-if-exists=.env.local scripts/db-restore.mjs",
     "verify:smoke": "node scripts/smoke.mjs",
@@ -35,6 +36,7 @@
     "next": "^16.4.0",
     "next-auth": "^5.0.0-beta.32",
     "pdfjs-dist": "^6.4.299",
+    "pg": "^8.23.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "zod": "^4.6.7"
@@ -42,8 +44,10 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.6.5",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "embedded-postgres": "^18.4.0-beta.17",
     "puppeteer-core": "^25.13.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2"
