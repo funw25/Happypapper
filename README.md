@@ -42,6 +42,8 @@ npm run db:reset     # 删除数据目录，重新执行全部迁移与种子
 6. **开发服务器崩溃后先删 `.next` 再重启。** 修改 `next.config.mjs` 会触发服务器自动重启，重启期间 Turbopack 的持久缓存可能损坏并 panic（`failed to open ... .sst`），进程直接 Aborting。处理方式：`Remove-Item .next -Recurse -Force`，然后 `npm run dev`。
 7. **后台启停要确认子进程真的退出。** `npm run dev` 会派生出 `next dev` 子进程；包装进程结束时子进程可能仍然存活并占着 3100 端口与数据库目录锁，表现为再次启动时报 `EADDRINUSE`、或直接操作数据库时报 PGlite abort。
 8. **本地数据在修复前不可信，修复后未复测。** 在第 5 条的修复之前观察到：开发服务器崩溃后，数据目录回到 `npm run db:reset` 写入的状态，运行期导入的论文、评论、注册用户全部消失；单独验证过普通 Node 进程被强杀时已提交的行会保留，所以丢失只出现在开发服务器这条路径。修复针对的正是那条路径的初始化失败，症状应当随之消失，但尚未做硬杀复测。复测方法：起服务器、跑 `verify:smoke`、强杀 `next dev` 子进程、再查 `papers` 行数。
+9. **推送需要代理。** 本机出海经 `127.0.0.1:7890` 的本地代理，PowerShell 的 `Invoke-WebRequest` 走 WinINET 设置因此能访问 github.com，而 `git` 与 `curl.exe` 不读该设置，直连会在约 21 秒后失败。仓库已设置 `git config --local http.proxy http://127.0.0.1:7890`；换机器或代理端口变化时需要重设。
+10. **改源码会清空检索缓存。** 开发服务器热更新会重新求值服务端模块，而检索结果缓存与限流计数都在进程内存里。`verify:search-fallback` 需要连续 11 分钟不发请求，运行期间不要编辑源码，否则脚本按「不判定」结束。
 
 ## 验证
 

@@ -16,7 +16,8 @@
 | `npm run verify:smoke` | 63/63 |
 | `npm run verify:notify` | 27/27 |
 | `npm run verify:search` | 24/24（第 12 轮扩项：缓存命中、元数据入库、来源与可用性标注）；自由文本检索依赖外网 OpenAlex，上游限流时退出码 2 |
-| `npm run verify:search-fallback` | 5/5（第 12 轮新增，opt-in，约 13 分钟：验证缓存回退分支） |
+| `npm run verify:search-fallback` | 6/6（第 12 轮新增，opt-in，约 12 分钟：验证缓存回退分支） |
+| `npm run verify:search-ui` | 4/4（第 12 轮新增，真实浏览器验证检索防抖，需要本机 Chrome/Edge） |
 | `npm run verify:github` | 14/14（用临时假凭据验证接线）；未配置凭据时 9/9 且退出码 2，AUTH-008 待定 |
 | `npm run verify:github-schema` | 6/6（需先停开发服务器；全程事务回滚，不留数据） |
 | `npm run verify:anchor` | 12/12 |
@@ -26,7 +27,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 代码 | `C:\Users\fnw\Desktop\happypaper`，无 git 仓库，无版本历史可回退 |
+| 代码 | `C:\Users\fnw\Desktop\happypaper`，git 仓库已建立，远程 `https://github.com/funw25/Happypapper`（公开），主分支 `main`，首个提交 `5766de6` 含 123 个受管文件 |
 | 数据库 | PGlite，数据目录 `../happypaper-data/pgdata`（在仓库之外），迁移至 `0007_paper_pdf_state.sql` |
 | PDF 存储 | `./storage/pdfs` |
 | 开发服务器 | 运行中，`http://localhost:3100`（第 11 轮重启过一次，见 2.4 节） |
@@ -85,6 +86,8 @@ B8（管理员种子缺少 Florence 与 α）已于第 2 轮完成，B6（远程
 | 文件沙箱为 `workspace-write` 时，PGlite 无法初始化：数据目录在仓库之外，写入被拒，报 `PGlite failed to initialize properly`。该报错与数据损坏无关 | 任何 `db:*` 命令、以及需要访问数据库的验证，都要在放宽沙箱（`danger-full-access`）下运行 |
 | 同一沙箱下 `next dev` 与 `puppeteer.launch` 都会 `spawn EPERM`（子进程管道被拒），`next build` 的 type-check 步骤同样如此 | `build` 在沙箱内只能验证到「编译成功」；`npm run typecheck` 与浏览器验证需要放宽沙箱 |
 | `.next/dev/types` 是 `next dev` 生成的旧类型桩：新增 `/settings` 路由后它会与 `.next/types` 不一致，`tsc` 报 `Type 'Route' does not satisfy the constraint '"/"'` | 出现该报错时删除 `.next/dev/types` 或重启开发服务器，不要改源码类型 |
+| 本机通过 `127.0.0.1:7890` 的本地代理出海。PowerShell 的 `Invoke-WebRequest` 走 WinINET 代理设置，而 `git` 与 `curl.exe` 不读该设置：直连 github.com 在 21 秒后报 `Connection was reset` / `Could not connect` | 本仓库已设置 `git config --local http.proxy http://127.0.0.1:7890`。换机器或代理端口变化时需要重设，否则推送与拉取都会超时 |
+| 开发服务器对源码改动做热更新，服务端模块会被重新求值：检索缓存与限流计数都在进程内存里，改一次源码即被清空 | `verify:search-fallback` 的 11 分钟等待期间不要编辑源码，否则预热好的缓存消失，脚本按「不判定（退出码 2）」结束 |
 
 ---
 
@@ -115,7 +118,15 @@ B8（管理员种子缺少 Florence 与 α）已于第 2 轮完成，B6（远程
 
 **上游现状（本轮实测）。** OpenAlex 对 `filter=title.search:` 返回 429 且 `Retry-After: 24511`（约 6.8 小时），对单篇 `works/doi:` 查询返回 200。因此标识符检索、缓存命中、元数据-only 入库与重试都可验证，自由文本检索的 10 项只能记为待定。这正是本阶段要解决的问题：限流不再表现为整页失败，而是有缓存就显示缓存、没有缓存就说清楚。
 
+**限流实测。** 30 次/60 秒的额度按设计生效：连续 35 次标识符探测中，第 30 次之后开始返回 429 并带 `retryAfterSeconds`；静置 70 秒后同一身份再次请求恢复 200。回退脚本里「第 N 次探测触发」这一行最初打印的是已记录检查数而不是探测序号，因此看上去像第 2 次就触发，容易误判为限流过严；已改为打印真实序号并重跑确认。
+
 **本轮遗留。** 自由文本检索的 10 项待上游冷却后重跑；`verify:search-fallback` 需要 13 分钟，不进默认基线；头像上传与对象存储仍依赖第四阶段；GitHub OAuth 真实回调、邮箱验证与密码找回属第三阶段。
+
+**同轮插入：建立版本历史。** 项目此前没有 git 仓库，第 11 轮一次编码失误只能从 `.next` 的 sourcemap 里找回原始源码。本轮建立仓库并把第一、二阶段成果作为首个提交推送：
+
+1. `.gitignore` 补 `.verify`（验证脚本的隔离数据库与截图），确认 `.env.local`、`storage/pdfs/*`、`node_modules`、`.next` 未被跟踪。
+2. `git init -b main` → `git add -A`（123 个文件）→ 提交 `5766de6` → `git remote add origin https://github.com/funw25/Happypapper.git` → 推送并建立跟踪。
+3. 推送前遇到网络问题：本机出海经 `127.0.0.1:7890` 本地代理，PowerShell 走 WinINET 设置因而 `Invoke-WebRequest` 能访问 github.com，但 `git` 直连在 21 秒后失败。解法是给本仓库设置 `http.proxy`，已写入 2.4 节。
 
 ### 2026-10-15 第 11 轮：第一阶段（产品基础）——个人资料、账号安全、隐私设置与三态主题
 

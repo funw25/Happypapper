@@ -71,10 +71,12 @@ await pause(WAIT_MS);
 // 4. 打满自身限流额度：这些 DOI 都不存在，上游会立刻回 404，因此单次请求很快，
 //    能在同一个 60 秒窗口内累积到上限。
 let limited = null;
+let probeIndex = null;
 for (let index = 0; index < EXHAUST_ATTEMPTS; index++) {
   const probe = await search(`10.48550/arxiv.1706.9999${index}`);
   if (probe.body?.error === "SEARCH_RATE_LIMITED") {
     limited = probe;
+    probeIndex = index + 1;
     break;
   }
 }
@@ -82,7 +84,7 @@ check(
   "连续检索会触发项目自身的限流",
   limited !== null,
   limited
-    ? `第 ${results.length} 次探测触发，retryAfter=${limited.body?.retryAfterSeconds ?? "-"} 秒`
+    ? `第 ${probeIndex} 次探测触发，retryAfter=${limited.body?.retryAfterSeconds ?? "-"} 秒`
     : `${EXHAUST_ATTEMPTS} 次未触发`,
 );
 
