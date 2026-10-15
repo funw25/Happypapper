@@ -20,6 +20,7 @@
 | `npm run verify:search-ui` | 4/4（第 12 轮新增，真实浏览器验证检索防抖，需要本机 Chrome/Edge） |
 | `npm run verify:github` | 14/14（用临时假凭据验证接线）；未配置凭据时 9/9 且退出码 2，AUTH-008 待定 |
 | `npm run verify:github-schema` | 6/6（需先停开发服务器；全程事务回滚，不留数据） |
+| `npm run verify:account` | 31/31（第 13 轮新增，未配置 OAuth 时）；36/36（同一脚本在临时假凭据下运行，额外覆盖绑定授权的跳转与 state 校验） |
 | `npm run verify:anchor` | 12/12 |
 | `npm run verify:reader` | 15/15（R1 已修复，连跑 5 次偏差 0.0px） |
 | `npm run verify:settings` | 27/27（第 11 轮新增，覆盖资料、密码、隐私三项与评论署名联动） |
@@ -28,7 +29,7 @@
 | 项 | 值 |
 | --- | --- |
 | 代码 | `C:\Users\fnw\Desktop\happypaper`，git 仓库已建立，远程 `https://github.com/funw25/Happypapper`（公开），主分支 `main`，首个提交 `5766de6` 含 123 个受管文件 |
-| 数据库 | PGlite，数据目录 `../happypaper-data/pgdata`（在仓库之外），迁移至 `0007_paper_pdf_state.sql` |
+| 数据库 | PGlite，数据目录 `../happypaper-data/pgdata`（在仓库之外），迁移至 `0008_account_tokens.sql` |
 | PDF 存储 | `./storage/pdfs` |
 | 开发服务器 | 运行中，`http://localhost:3100`（第 11 轮重启过一次，见 2.4 节） |
 | 本地账号 | `admin@happypaper.local` / `admin12345`（管理员）、`reader@happypaper.local` / `reader12345`（普通用户）、`florence@happypaper.com` / `florence12345`（管理员 Florence）、`alpha@happypaper.com` / `alpha12345`（管理员 α）、`smoke-*@happypaper.local` / `probe12345`（历史脚本注册的测试账号） |
@@ -46,9 +47,10 @@
 | R1 | ~~`verify:reader` 间歇失败~~ **已于第 10 轮修复**。原因是脚本在 PDF 按新比例重排完成前取样，`expectedZoom` 用的是未缩放高度；产品最终状态一直是正确的 0.0px。修法是加「画布尺寸稳定」等待，连跑 5 次均 14/14、偏差 0.0px。详见工作日志第 10 轮 | 第 9 轮复现、第 10 轮修复 | 02-roadmap M3 的「缩放到 160% 后标记仍跟随文本」 |
 | R2 | **验证脚本之间存在发评论配额冲突**：`verify:smoke` 有一条测限流的检查，会用满 reader 账号 60 秒 5 条的配额，因此 smoke → notify → reader 不能在 60 秒内连跑。三个脚本现在都会把这种情况报成退出码 2，但基线仍需按 70 秒间隔执行 | 第 10 轮实测 | 应用自身的限流规则（`src/lib/comments/queries.ts`） |
 | B7 | GitHub 登录：**接线与表结构均已完成并验证**，OAuth 握手未验证。等待真实 `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` 才能验证回调、token 交换与首登建号 | `verify:github` 14/14（假凭据）、`verify:github-schema` 6/6 | AUTH-008 至 AUTH-010（第 117–120 行） |
-| B7 余项 | AUTH-011 至 AUTH-013 未实现：已有邮箱账号绑定/解绑 GitHub、必须保留一种登录方式。`/settings/account` 页面已于第 11 轮建立（邮箱展示、修改/设置密码、GitHub 绑定状态），绑定与解绑本身仍缺 | 读代码确认 | AUTH-011 至 AUTH-013（第 121–122 行）、第 255 行 |
+| B7 余项 | AUTH-011 至 AUTH-013 已于第 13 轮实现：`/settings/account` 的绑定与解绑、解绑保护、邮箱验证与邮箱修改、密码找回。**真实 OAuth 握手仍未验证**：绑定发起与回调的接线在临时假凭据下通过（36/36），但 token 交换、读取 GitHub 身份、首登建号需要真实凭据与浏览器 | 第 13 轮 | AUTH-011 至 AUTH-013（第 121–122 行）、第 255 行 |
 | P1 | **个人资料、隐私与主题需求**（PROFILE-001 至 PROFILE-009、PRIVACY-001 至 PRIVACY-013、UI-001 至 UI-007）已于第 11 轮实现，`verify:settings` 27/27、`verify:theme` 8/8 | 第 11 轮 | 03-requirements 第 126–185、81–99 行 |
 | P2 | **论文获取模型**（PAPER-002、PAPER-005、PAPER-006、PAPER-007 与第 28 行的「已找到元数据但没有可用 PDF」）已于第 12 轮实现：检索缓存与限流、元数据与 PDF 状态分离、无 PDF 也能入库并可重试、结果展示来源与可用性 | 第 12 轮 | 03-requirements 第 17–39 行 |
+| P3 | **账号闭环**（AUTH-006、AUTH-007、AUTH-011 至 AUTH-013、PROFILE-008）已于第 13 轮实现：一次性令牌、邮箱验证与邮箱修改、密码找回、GitHub 绑定与解绑保护 | 第 13 轮（`verify:account` 31/31，假凭据下 36/36） | 03-requirements 第 101–124、152 行 |
 
 B7 的 OAuth 握手阻塞点是**只有用户能提供的输入**：在 GitHub 上创建 OAuth App 得到的 client id 与 client secret。回调地址填 `http://localhost:3100/api/auth/callback/github`。凭据到位后重跑 `npm run verify:github` 可把退出码从 2 变成 0，但首次登录建号仍需浏览器完成一次真实登录才能验证。
 
@@ -63,7 +65,9 @@ B8（管理员种子缺少 Florence 与 α）已于第 2 轮完成，B6（远程
 | 项 | 状态 |
 | --- | --- |
 | 生产运行时（`npm run start`） | 未验证。全部验证脚本都指向开发服务器，`pdfjs-dist` 客户端打包与 `ssr: false` 动态导入只有「编译通过」的证据 |
-| GitHub OAuth 握手 | 未验证。provider 注册、授权跳转、PKCE 已用假凭据验证（`verify:github` 8/8）；OAuth 首登要写的表结构已验证（`verify:github-schema` 6/6）。剩下的只有 GitHub 侧的回调与 token 交换，需要真实 `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` 加一次浏览器登录 |
+| GitHub OAuth 握手 | 未验证。provider 注册、授权跳转、PKCE 已用假凭据验证（`verify:github` 14/14）；账号绑定的授权跳转与 state 校验也已在假凭据下通过（`verify:account` 36/36）。剩下的只有 GitHub 侧的回调、token 交换与首登建号，需要真实 `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` 加一次浏览器登录 |
+| 解绑保护的「唯一登录方式」分支 | 未触发。`unlinkGithub` 在没有本地密码时返回 409，但要造出「只绑定 GitHub、没有密码」的账号需要真实 GitHub 绑定，因此这条分支只有代码与单元级证据，没有端到端证据 |
+| 邮件投递 | 未接入。`src/lib/mailer.ts` 只实现写日志传输；流程本身（令牌、过期、一次性、页面）已端到端验证，真实投递需要 SMTP 凭据 |
 | `src/lib/storage.ts` 的动态文件系统访问 | 6 条 Turbopack 追踪警告。实测无功能影响（`.next` 67.3 MB、`.next/server` 17.1 MB、`storage/pdfs` 下的 PDF 未被复制进去），未处理 |
 | 通知的实时推送 | 未实现。未读数在页面加载/刷新时读取，没有按用户维度的 SSE 扇出（02-roadmap B2 第 4 点列为设计要点，当前只做到「进入页面可见」） |
 
@@ -92,6 +96,33 @@ B8（管理员种子缺少 Florence 与 α）已于第 2 轮完成，B6（远程
 ---
 
 ## 三、工作日志
+
+### 2026-10-16 第 13 轮：第三阶段（账号闭环）——邮箱验证、修改邮箱、密码找回、GitHub 绑定与解绑保护
+
+**结论：不依赖真实凭据的部分全部完成。** `verify:account` 新增，未配置 OAuth 时 31/31；用临时假凭据重启后 36/36（额外覆盖绑定授权跳转与 state 校验）；`verify:github` 14/14；`verify:settings` 27/27、`verify:smoke` 63/63 无回归；`typecheck` 0 错误。真实 OAuth 握手与真实邮件投递仍缺凭据，见 2.2 节。
+
+需求依据：`docs/03-requirements.md` AUTH-006（密码找回）、AUTH-007（改邮箱与重置密码需重新验证）、AUTH-011 至 AUTH-013（绑定、解绑、解绑保护）、PROFILE-008（邮箱修改需验证）。
+
+做了什么：
+
+1. 迁移 `drizzle/0008_account_tokens.sql`：`account_tokens` 表（用途、SHA-256 摘要、过期、使用时间）+ `users.pending_email`。三种用途共用一张表：`email_verify`、`email_change`、`password_reset`。
+2. 令牌库 `src/lib/auth/tokens.ts`：32 字节随机值，库里只存 SHA-256 摘要，因此数据目录被读走也拿不到可用链接；一次性使用；重置密码 1 小时、邮箱类 24 小时；签发同用途新令牌时旧的未用令牌立即作废。
+3. 密码规则抽到 `src/lib/auth/password.ts`：注册、账号安全页改密码、邮件重置三处共用同一套长度与哈希逻辑，之前是分散写死的。
+4. 邮箱验证与改邮箱：`POST /api/me/email` 发验证邮件、`PATCH` 改邮箱（新地址先进入 `pending_email`，链接打开前旧地址仍是登录依据）、`DELETE` 取消；`POST /api/auth/verify-email` 确认两种令牌。确认做成 POST：邮件网关与安全扫描器会预取链接，GET 即生效会让令牌在用户点开前被消耗掉。
+5. 密码找回：`POST /api/auth/forgot-password` 无论邮箱是否存在都返回同一句话（响应差异等于用户枚举接口），按来源地址限流 5 次/15 分钟；`POST /api/auth/reset-password` 校验令牌、更新密码并作废同用户其它重置令牌。
+6. GitHub 绑定：`/api/me/github/connect` 与 `/api/me/github/callback` 自建一套 OAuth，写的是同一张 `accounts` 表。原因是 Auth.js 不支持把身份绑到「当前已登录的账号」——它的 OAuth 回调只会按 `provider_account_id` 或邮箱解析出一个用户并登录，邮箱冲突时直接 `OAuthAccountNotLinked`。绑好之后 GitHub 登录仍由 Auth.js 正常解析到该账号。state 与用户 id 一起放进 HttpOnly cookie，回调同时校验两者。
+7. 解绑保护 `unlinkGithub`：账号必须保留至少一种可登录方式，只有 GitHub 且没有本地密码时返回 409 并提示先设置密码，而不是把账号变成无法登录的孤岛。
+8. 页面：`/forgot-password`、`/reset-password`、`/verify-email`；账号安全页扩展为邮箱区块（验证状态、重发验证、修改邮箱、取消修改）+ 密码区块 + GitHub 区块（绑定/解绑与当前可用登录方式）；登录表单加「忘记密码？」入口。账号安全页在邮件通道未配置时明说「链接写入服务器日志，由管理员转达」，而不是假装邮件已发出。
+9. 邮件层 `src/lib/mailer.ts`：目前只有写日志一种传输方式，接入真实发信只需在同一个函数里加分支，调用方与页面文案都不用改。
+
+两处由实测决定的实现细节：
+
+- **验证脚本读日志必须按请求偏移取。** 第一版从日志里取「最后一条含 `verify-email?token=` 的行」，结果上一轮运行留下的令牌被当成这一轮的：验证接口返回成功，但验证的是别的账号，后续断言连锁失败（`emailVerified` 仍是 false）。改为发请求前记录文件长度、只在之后的片段里找；同时按字节切片（`statSync().size` 是字节，字符串下标是 UTF-16 单元，日志里有中文时两者会逐渐错位，最后切到新内容之后而漏掉链接）。
+- **一次性令牌按用途隔离。** `consumeToken` 按摘要 + 用途查询，邮箱修改令牌不能当邮箱验证令牌使用；这条规则让「改邮箱」与「验证当前邮箱」共用同一个页面而不会互相顶替。
+
+**本轮踩到的坑。** 找回密码接口限流是 5 次/15 分钟、按来源地址计，同一台机器 15 分钟内重复运行 `verify:account` 会命中，脚本因此按项目惯例以退出码 2 结束（不判定），而不是报成回归；重启开发服务器会清空进程内的计数。
+
+**本轮遗留。** 真实 OAuth 握手、真实邮件投递、解绑保护的「唯一登录方式」分支（需要真实绑定才能造出该账号）见 2.2 节；OAuth App 只允许一个回调地址，登录与绑定两个流程都要用需要注册 GitHub App 并填两个 Redirect URI，已写入 README 环境注意第 11 条。
 
 ### 2026-10-16 第 12 轮：第二阶段（论文获取模型）——检索缓存与限流、元数据与 PDF 状态分离
 

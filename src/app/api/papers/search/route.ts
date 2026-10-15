@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { jsonError } from "@/lib/api";
+import { clientIdentity, jsonError } from "@/lib/api";
 import { currentUser } from "@/lib/session";
 import { findPublisher, isPaperSort } from "@/lib/papers/openalex";
 import { runRemoteSearch } from "@/lib/papers/search-service";
@@ -17,12 +17,6 @@ import { findImported } from "@/lib/papers/queries";
  * still answer from the cache, and the client is expected to say so rather than
  * present old results as fresh (PAPER-006).
  */
-function requesterIdentity(request: Request, userId: string | null): string {
-  if (userId) return `user:${userId}`;
-  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return `ip:${forwarded || "local"}`;
-}
-
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const q = url.searchParams.get("q")?.trim() ?? "";
@@ -40,7 +34,7 @@ export async function GET(request: Request) {
     sort,
     publisher,
     limit: 12,
-    identity: requesterIdentity(request, user?.id ?? null),
+    identity: clientIdentity(request, user?.id ?? null),
   });
 
   const payload = {

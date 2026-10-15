@@ -1,7 +1,7 @@
-import bcrypt from "bcryptjs";
 import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { accounts, users } from "@/db/schema";
+import { hashPassword, passwordProblem, verifyPassword } from "@/lib/auth/password";
 
 /**
  * Read and write paths for the settings pages (docs/03-requirements.md 5, 6, 9).
@@ -24,6 +24,7 @@ export type AccountSettings = {
   name: string;
   email: string;
   emailVerified: boolean;
+  pendingEmail: string | null;
   avatarUrl: string | null;
   bio: string | null;
   role: string;
@@ -38,6 +39,7 @@ export async function getAccountSettings(userId: string): Promise<AccountSetting
       name: users.name,
       email: users.email,
       emailVerified: users.emailVerified,
+      pendingEmail: users.pendingEmail,
       avatarUrl: users.image,
       bio: users.bio,
       role: users.role,
@@ -55,6 +57,7 @@ export async function getAccountSettings(userId: string): Promise<AccountSetting
     name: row.name,
     email: row.email,
     emailVerified: row.emailVerified !== null,
+    pendingEmail: row.pendingEmail,
     avatarUrl: row.avatarUrl,
     bio: row.bio,
     role: row.role,
@@ -149,16 +152,14 @@ export async function updateProfile(
   return saved;
 }
 
-const MIN_PASSWORD_LENGTH = 8;
-const MAX_PASSWORD_LENGTH = 72;
-
 export async function changePassword(
   userId: string,
   currentPassword: string,
   newPassword: string,
 ): Promise<void> {
-  if (newPassword.length < MIN_PASSWORD_LENGTH || newPassword.length > MAX_PASSWORD_LENGTH) {
-    throw new SettingsError("INVALID_PASSWORD", 400, "新密码需要 8 到 72 位");
+  const problem = passwordProblem(newPassword);
+  if (problem) {
+    throw new SettingsError("INVALID_PASSWORD", 400, problem.replace("密码需要", "新密码需要"));
   }
   if (newPassword === currentPassword) {
     throw new SettingsError("SAME_PASSWORD", 400, "新密码不能与当前密码相同");
@@ -173,13 +174,14 @@ export async function changePassword(
 
   // Accounts created through GitHub start without a local password; the first
   // password they set does not need a current password to compare against.
-  if (row.passwordHash) {
-    const ok = await bcrypt.compare(currentPassword, row.passwordHash);
-    if (!ok) throw new SettingsError("WRONG_PASSWORD", 403, "当前密码不正确");
+  if (row.passwordHash && !(await verifyPassword(currentPassword, row.passwordHash))) {
+    throw new SettingsError("WRONG_PASSWORD", 403, "当前密码不正确");
   }
 
-  const passwordHash = await bcrypt.hash(newPassword, 10);
-  await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
+  await db
+    .update(users)
+    .set({ passwordHash: await hashPassword(newPassword) })
+    .where(eq(users.id, userId));
 }
 
 export function normaliseAvatarUrl(raw: string | null | undefined): string | null {

@@ -266,7 +266,7 @@ updated_at
 - [ ] Florence 和 α 账号拥有管理员权限
 - [ ] 管理员权限不能由普通用户通过修改请求参数获得
 - [x] 用户可以编辑昵称、头像和个人简介（`npm run verify:settings`，第 11 轮）
-- [ ] 用户可以修改邮箱并完成验证
+- [x] 用户可以修改邮箱并完成验证（`npm run verify:account`，第 13 轮）
 - [x] 用户可以设置默认匿名发布（`npm run verify:settings`，第 11 轮）
 - [x] 用户可以控制个人主页是否展示自己的评论（`npm run verify:settings`，第 11 轮）
 - [x] 用户可以控制评论是否进入弹幕流（`npm run verify:settings`，第 11 轮）

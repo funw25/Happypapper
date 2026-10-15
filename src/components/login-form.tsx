@@ -74,6 +74,11 @@ export function LoginForm({
         <button className="hp-btn hp-btn-primary w-full" disabled={pending} type="submit">
           {pending ? "登录中…" : "登录"}
         </button>
+        <p className="text-xs text-[var(--paper-muted)]">
+          <a className="hover:text-[var(--paper-accent)] hover:underline" href="/forgot-password">
+            忘记密码？
+          </a>
+        </p>
       </form>
 
       {githubEnabled ? (

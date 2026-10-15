@@ -26,6 +26,9 @@ export const users = pgTable("users", {
   // Null for accounts created through GitHub, which have no local password yet.
   passwordHash: text("password_hash"),
   emailVerified: timestamp("email_verified", { withTimezone: true }),
+  // Set while an email change awaits confirmation at the new address; the old
+  // address keeps working until the link is opened (AUTH-007).
+  pendingEmail: text("pending_email"),
   bio: text("bio"),
   role: text("role").notNull().default("user"),
   reputation: integer("reputation").notNull().default(0),
@@ -212,6 +215,30 @@ export const favorites = pgTable(
 export const bannedWords = pgTable("banned_words", {
   word: text("word").primaryKey(),
 });
+
+/**
+ * One-time tokens for email verification, email change and password reset
+ * (AUTH-006, AUTH-007). Only the SHA-256 digest is stored, so a database read
+ * does not yield a usable link; `used_at` makes each token single-use.
+ */
+export const accountTokens = pgTable(
+  "account_tokens",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    purpose: text("purpose").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("account_tokens_hash_idx").on(t.tokenHash),
+    index("account_tokens_user_purpose_idx").on(t.userId, t.purpose),
+  ],
+);
 
 export const notifications = pgTable(
   "notifications",

@@ -44,6 +44,8 @@ npm run db:reset     # 删除数据目录，重新执行全部迁移与种子
 8. **本地数据在修复前不可信，修复后未复测。** 在第 5 条的修复之前观察到：开发服务器崩溃后，数据目录回到 `npm run db:reset` 写入的状态，运行期导入的论文、评论、注册用户全部消失；单独验证过普通 Node 进程被强杀时已提交的行会保留，所以丢失只出现在开发服务器这条路径。修复针对的正是那条路径的初始化失败，症状应当随之消失，但尚未做硬杀复测。复测方法：起服务器、跑 `verify:smoke`、强杀 `next dev` 子进程、再查 `papers` 行数。
 9. **推送需要代理。** 本机出海经 `127.0.0.1:7890` 的本地代理，PowerShell 的 `Invoke-WebRequest` 走 WinINET 设置因此能访问 github.com，而 `git` 与 `curl.exe` 不读该设置，直连会在约 21 秒后失败。仓库已设置 `git config --local http.proxy http://127.0.0.1:7890`；换机器或代理端口变化时需要重设。
 10. **改源码会清空检索缓存。** 开发服务器热更新会重新求值服务端模块，而检索结果缓存与限流计数都在进程内存里。`verify:search-fallback` 需要连续 11 分钟不发请求，运行期间不要编辑源码，否则脚本按「不判定」结束。
+11. **GitHub OAuth 需要两个回调地址。** 登录走 `http://localhost:3100/api/auth/callback/github`（Auth.js），账号绑定走 `http://localhost:3100/api/me/github/callback`（自建，因为 Auth.js 不支持把身份绑到当前账号）。GitHub OAuth App 只允许填一个回调地址，因此两个流程都要用时请注册 GitHub App 并把两个地址都加进 Redirect URIs；只填一个时另一个流程会在授权页报 `redirect_uri_mismatch`。
+12. **邮件通道未配置。** `src/lib/mailer.ts` 目前只有写日志一种传输方式，验证与重置链接以 `[mail] {...}` 形式写入 `.next/dev/logs/next-development.log`，由管理员转达。接入 SMTP 只需在该文件加一个传输分支，页面与令牌逻辑不用改；`verify:account` 正是从这份日志里取令牌，因此配置真实邮件后脚本改从邮箱取链接即可，断言不变。
 
 ## 验证
 
@@ -57,6 +59,7 @@ npm run verify:search-fallback # 5 项，缓存回退分支，约 13 分钟，�
 npm run verify:search-ui      # 4 项，检索表单防抖与结果渲染，需要开发服务器 + 本机 Chrome/Edge
 npm run verify:github         # 14 项，GitHub 登录接线与首登昵称规则；无凭据时 9 项通过并退出码 2（表示待定）
 npm run verify:github-schema  # 6 项，OAuth 首登要写的表结构；需要先停掉开发服务器
+npm run verify:account        # 31 至 36 项，邮箱验证、修改邮箱、密码找回与解绑保护，需要开发服务器
 npm run verify:anchor         # 12 项，独立运行，读取 storage/pdfs 里最新的 PDF
 npm run verify:reader         # 15 项，需要开发服务器 + 本机 Chrome/Edge
 npm run verify:settings       # 27 项，个人资料、密码、隐私设置与评论署名联动，需要开发服务器
@@ -75,6 +78,7 @@ npm run typecheck             # tsc --noEmit
 | `verify:search-ui` | 真实浏览器：在远程模式下逐字快速输入 10 个字符，断言只落地 1 至 2 次检索跳转且最后一次带上完整关键词（防抖生效）；结果区渲染出论文或可理解的空状态；用键盘清空关键词后回到本地论文库视图 |
 | `verify:github` | GitHub 登录接线与首登昵称规则：昵称未被占用时保持原样、被占用时自动加后缀、为空时回落默认名、长度截断、候选耗尽时仍返回可用昵称、无邮箱时回落 noreply；密码登录仍注册、凭据存在时注册 GitHub provider 并显示按钮、发起登录跳转到 GitHub 授权页、带 client_id、回调指向本应用、使用 PKCE 并下发 CSRF 与 PKCE cookie；凭据缺失时断言 GitHub 被正确关闭并以退出码 2 报告 AUTH-008 待定。**不含** OAuth 回调、token 交换与首登建号，那需要真实 GitHub 账号与浏览器 |
 | `verify:github-schema` | OAuth 首次登录要写的表结构：可以创建没有本地密码的账号、可以把 GitHub 身份写入 `accounts`、同一 GitHub 身份不能被重复绑定、同名账号被拒绝、删除账号会级联删除绑定、检查过程不留下数据。需要先停开发服务器，全程事务回滚 |
+| `verify:account` | 账号闭环：三个页面可访问；账号安全页含邮箱验证、修改邮箱与 GitHub 绑定入口；给当前邮箱发验证邮件并从开发服务器日志取回令牌、确认后邮箱标记已验证、同一令牌不能重复使用；改成他人占用的邮箱返回 409、改成新地址先进入待确认状态、确认后新邮箱生效且旧邮箱不再能登录；未绑定 GitHub 时解绑返回 `NOT_LINKED`、未登录的解绑与绑定发起返回 401；配置 OAuth 后绑定发起跳转 GitHub 授权页并带 client_id、自建回调地址、只读 scope 与 HttpOnly state cookie，回调在 state 不匹配或缺 cookie 时回到账号页说明原因；未注册邮箱申请找回返回同样响应（不枚举用户）、过短新密码被拒、令牌一次性、新旧密码登录结果、找回接口限流。邮件通道未配置时链接写入开发服务器日志，脚本按请求偏移从日志取令牌，没有测试专用旁路 |
 | `verify:anchor` | 用真实 PDF（Attention Is All You Need 第 4 页的 175 个文本项）验证引用定位，并验证**重新分块、大小写变化、空格变化、连字符换行**后仍能定位；同一句出现两次时用前后文选中正确的一处 |
 | `verify:reader` | 真实浏览器：登录后打开阅读器，确认画布与文本层渲染、在文本层建立选区并转成锚点草稿、发布评论、服务端保存引用与前后文，**刷新后位置标记偏差 0.0px**、**缩放到 160% 后标记仍跟随文本**、无前端异常 |
 | `verify:settings` | `/settings/profile`、`/settings/account`、`/settings/privacy` 三个页面可访问且未登录被重定向；昵称、头像、简介保存后刷新仍在；占用他人昵称返回 409、过短昵称 400、非 http 头像地址 400；三个隐私开关保存后刷新生效；默认匿名设置使新评论的署名在接口响应里就是 `null` 且 `isAnonymous` 为真；关闭弹幕后新评论 `visibleInDanmaku` 为假；关闭主页评论后公开主页不列评论并给出说明；显式取消匿名时按公开昵称署名；密码修改的三种结果（当前密码错误 403、新密码过短 400、正确 200）与用新密码重新登录；结束时还原资料、隐私设置与密码 |

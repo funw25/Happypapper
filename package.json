@@ -14,6 +14,7 @@
     "verify:notify": "node scripts/verify-notify.mjs",
     "verify:github": "node scripts/verify-github.mjs",
     "verify:github-schema": "node scripts/verify-github-schema.mjs",
+    "verify:account": "node scripts/verify-account.mjs",
     "verify:anchor": "node scripts/verify-anchor.mjs",
     "verify:search": "node scripts/verify-search.mjs",
     "verify:search-fallback": "node scripts/verify-search-fallback.mjs",
