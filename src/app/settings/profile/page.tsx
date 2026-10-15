@@ -17,7 +17,12 @@ export default async function ProfileSettingsPage() {
   return (
     <div className="hp-stack">
       <ProfileForm
-        initial={{ name: settings.name, avatarUrl: settings.avatarUrl, bio: settings.bio }}
+        initial={{
+          name: settings.name,
+          avatarBg: settings.avatarBg,
+          avatarFg: settings.avatarFg,
+          bio: settings.bio,
+        }}
       />
 
       <section className="hp-card p-6">

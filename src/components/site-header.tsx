@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { currentUser } from "@/lib/session";
 import { unreadNotificationCount } from "@/lib/notifications/queries";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
+import { Avatar } from "@/components/avatar";
 
 export async function SiteHeader() {
   const session = await auth();
@@ -56,6 +57,7 @@ export async function SiteHeader() {
               <Link href={`/u/${encodeURIComponent(user.name)}`} className="font-medium">
                 {user.name}
               </Link>
+              <Avatar size="sm" name={user.name} avatarBg={user.avatarBg} avatarFg={user.avatarFg} />
             </>
           ) : (
             <>

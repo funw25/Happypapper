@@ -7,7 +7,8 @@ export async function profileByName(name: string) {
     .select({
       id: users.id,
       name: users.name,
-      image: users.image,
+      avatarBg: users.avatarBg,
+      avatarFg: users.avatarFg,
       bio: users.bio,
       role: users.role,
       reputation: users.reputation,

@@ -12,11 +12,8 @@ import {
 
 export type ByteRange = { start: number; end: number };
 
-/** 上传时可选的元数据：对象存储靠它决定浏览器拿到的 content-type。 */
-export type PutOptions = { contentType?: string };
-
 export interface StorageAdapter {
-  put(key: string, data: Uint8Array, options?: PutOptions): Promise<void>;
+  put(key: string, data: Uint8Array): Promise<void>;
   getStream(key: string, range?: ByteRange): Promise<ReadableStream<Uint8Array>>;
   stat(key: string): Promise<{ size: number } | null>;
   delete(key: string): Promise<void>;
@@ -65,7 +62,7 @@ function safePath(key: string) {
 }
 
 class LocalDiskStorage implements StorageAdapter {
-  async put(key: string, data: Uint8Array, _options?: PutOptions) {
+  async put(key: string, data: Uint8Array) {
     const target = safePath(key);
     await mkdir(/* turbopackIgnore: true */ dirname(target), { recursive: true });
     await writeFile(/* turbopackIgnore: true */ target, data);
@@ -138,14 +135,14 @@ class S3Storage implements StorageAdapter {
     return this.config;
   }
 
-  async put(key: string, data: Uint8Array, options?: PutOptions) {
+  async put(key: string, data: Uint8Array) {
     const { bucket, client } = this.s3();
     await client.send(
       new PutObjectCommand({
         Bucket: bucket,
         Key: key,
         Body: data,
-        ContentType: options?.contentType ?? "application/pdf",
+        ContentType: "application/pdf",
       }),
     );
   }

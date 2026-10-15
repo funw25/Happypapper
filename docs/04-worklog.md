@@ -26,7 +26,7 @@
 | `npm run verify:github-flow` | 16/16（第 17 轮新增；需假提供方，PostgreSQL 与 PGlite 各跑一遍） |
 | `npm run verify:anchor` | 12/12 |
 | `npm run verify:reader` | 15/15（R1 已修复，连跑 5 次偏差 0.0px） |
-| `npm run verify:settings` | 36/36（第 11 轮建立，第 18 轮加入头像 9 项；local 与 s3 各跑一遍） |
+| `npm run verify:settings` | 32/32（第 11 轮建立，第 19 轮加入头像 5 项：字符、默认配色、自定义配色、非法颜色） |
 | `npm run verify:theme` | 8/8（第 11 轮新增，真实浏览器验证三态主题、刷新持久化与跟随系统） |
 
 | 项 | 值 |
@@ -51,7 +51,7 @@
 | R2 | **验证脚本之间存在发评论配额冲突**：`verify:smoke` 有一条测限流的检查，会用满 reader 账号 60 秒 5 条的配额，因此 smoke → notify → reader 不能在 60 秒内连跑。三个脚本现在都会把这种情况报成退出码 2，但基线仍需按 70 秒间隔执行 | 第 10 轮实测 | 应用自身的限流规则（`src/lib/comments/queries.ts`） |
 | B7 | GitHub 登录：**接线与表结构均已完成并验证**，OAuth 握手未验证。等待真实 `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` 才能验证回调、token 交换与首登建号 | `verify:github` 14/14（假凭据）、`verify:github-schema` 6/6 | AUTH-008 至 AUTH-010（第 117–120 行） |
 | B7 余项 | AUTH-011 至 AUTH-013 已于第 13 轮实现：`/settings/account` 的绑定与解绑、解绑保护、邮箱验证与邮箱修改、密码找回。**真实 OAuth 握手仍未验证**：绑定发起与回调的接线在临时假凭据下通过（36/36），但 token 交换、读取 GitHub 身份、首登建号需要真实凭据与浏览器 | 第 13 轮 | AUTH-011 至 AUTH-013（第 121–122 行）、第 255 行 |
-| P1 | **个人资料、隐私与主题需求**（PROFILE-001 至 PROFILE-009、PRIVACY-001 至 PRIVACY-013、UI-001 至 UI-007）已于第 11 轮实现，第 18 轮补上头像上传（第 5.2 节「头像可编辑」的完整形态）与公开主页的头像、简介展示；`verify:settings` 36/36、`verify:theme` 8/8 | 第 11、18 轮 | 03-requirements 第 126–185、81–99 行 |
+| P1 | **个人资料、隐私与主题需求**（PROFILE-001 至 PROFILE-009、PRIVACY-001 至 PRIVACY-013、UI-001 至 UI-007）已于第 11 轮实现，第 18 轮做过头像上传、第 19 轮按用户指示改为「昵称前两个字符 + 可选配色」并撤掉上传；`verify:settings` 32/32、`verify:theme` 8/8 | 第 11、18 轮 | 03-requirements 第 126–185、81–99 行 |
 | P2 | **论文获取模型**（PAPER-002、PAPER-005、PAPER-006、PAPER-007 与第 28 行的「已找到元数据但没有可用 PDF」）已于第 12 轮实现：检索缓存与限流、元数据与 PDF 状态分离、无 PDF 也能入库并可重试、结果展示来源与可用性 | 第 12 轮 | 03-requirements 第 17–39 行 |
 | P3 | **账号闭环**（AUTH-006、AUTH-007、AUTH-011 至 AUTH-013、PROFILE-008）已于第 13 轮实现：一次性令牌、邮箱验证与邮箱修改、密码找回、GitHub 绑定与解绑保护 | 第 13 轮（`verify:account` 31/31，假凭据下 36/36） | 03-requirements 第 101–124、152 行 |
 
@@ -104,6 +104,32 @@ B8（管理员种子缺少 Florence 与 α）已于第 2 轮完成，B6（远程
 
 ## 三、工作日志
 
+### 2026-10-16 第 19 轮：头像改为「昵称前两个字符 + 可选配色」
+
+**结论：头像统一为昵称前两个字符生成，配色可选，默认克莱因蓝底 #002FA7 + 白字。** `verify:settings` 32/32（头像 5 项）、`verify:smoke` 63/63、`typecheck` 0 错误。
+
+需求依据：用户当轮指示——「头像统一设置为个人昵称的前两个字符（可以自行选择什么颜色是底色，字符是什么颜色，默认是蓝色底 #002FA7，白色字）」。上一轮做的上传通道与外链地址按这条指示一并撤掉：它们与「统一」冲突，且撤掉后头像不再依赖对象存储、不受外链失效影响。
+
+做了什么：
+
+1. `src/lib/avatar.ts`：`avatarInitials` 用 `Array.from` 按码点取前两个字符（否则 emoji 与罕用汉字会被从中间劈开），空白先去掉、全空回落问号；`avatarColors` 对非法值回落默认色。六个预设底色都配白字可读，另可填任意 `#RRGGBB`。
+2. `src/components/avatar.tsx`：一个组件，服务端与客户端都能渲染，页头（小号）、设置页预览（大号）、公开主页与 `/me`（大号）共用，不会出现三处各写一套字号圆角。
+3. 迁移 `0009_avatar_colors.sql`：`users.avatar_bg` / `users.avatar_fg`，默认 `#002FA7` / `#FFFFFF`。`/api/me/profile` 的 PATCH 接受两个颜色字段（省略即不改动），颜色在服务层统一校验，非法值返回 `INVALID_COLOR`。
+4. 资料页把「头像地址」输入框与上传控件换成配色面板：六个预设 + 取色器 + `#RRGGBB` 输入 + 恢复默认；预览用同一个组件，选什么就显示什么。
+5. 公开主页补上简介展示（第 11 轮只做了昵称与统计）。
+6. 撤掉上传通道：`/api/me/avatar`、`/api/avatars/[file]`、`lib/avatars.ts`、上传组件，以及存储接口为此加的 `contentType` 选项。存储层回到只服务 PDF。
+
+验证证据：
+
+| 项 | 结果 |
+| --- | --- |
+| 默认配色与字符 | 页头与公开主页渲染 `re`，`background-color:#002FA7; color:#FFFFFF`（浏览器实测） |
+| 自定义配色 | PATCH `#123456` / `#fedcba` → 返回 `#123456` / `#FEDCBA`，公开主页 HTML 出现该颜色 |
+| 非法输入 | `"blue"` → 400 `INVALID_COLOR`；`"#fff"` → 400 |
+| 回归 | `verify:settings` 32/32、`verify:smoke` 63/63 |
+
+**本轮遗留。** 颜色由用户自选，浅色底配白字这类低对比组合没有被禁止（预设都保证可读，自定义值不校验对比度）。若之后认为需要，可以在保存时按相对亮度给出警告。
+
 ### 2026-10-16 第 18 轮：头像上传（补齐第一阶段留下的唯一缺口）
 
 **结论：头像上传完成并在本机磁盘与对象存储两个驱动上验证。** `verify:settings` 由 27 项增至 36 项，local 与 s3 下各 36/36；`verify:storage`（s3）11/11；`verify:smoke` 63/63 无回归；`typecheck` 0 错误。
@@ -127,7 +153,7 @@ B8（管理员种子缺少 Florence 与 α）已于第 2 轮完成，B6（远程
 | 项 | 结果 |
 | --- | --- |
 | 头像 9 项（local 与 s3 各一遍） | 未登录 401；PNG 上传返回站内地址；该地址字节与上传内容一致且 `content-type: image/png`；保存资料不带头像字段不掉头像；再次上传换新地址且旧对象 404；改后缀的非图片按文件头被拒（`UNSUPPORTED_TYPE`）；超过 2MB 返回 413 |
-| `verify:settings` | 36/36（local）、36/36（s3） |
+| `verify:settings` | 36/36（local）、36/36（s3）；第 19 轮撤掉上传后为 32/32 |
 | `verify:storage` | 11/11（s3，日志确认 `driver=s3`） |
 | `verify:smoke` | 63/63 |
 

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { SiteHeader } from "@/components/site-header";
+import { Avatar } from "@/components/avatar";
 import { MarkAllReadButton } from "@/components/notifications/mark-read-button";
 import { LikeNotificationToggle } from "@/components/notifications/like-notification-toggle";
 import { currentUser } from "@/lib/session";
@@ -40,12 +41,17 @@ export default async function MePage({
     <>
       <SiteHeader />
       <main className="mx-auto max-w-3xl px-4 py-8">
-        <h1 className="text-xl font-semibold">{user.name} 的阅读空间</h1>
-        <p className="mt-1 text-sm text-[var(--paper-muted)]">
-          <Link href={`/u/${encodeURIComponent(user.name)}`} className="text-[var(--paper-accent)] hover:underline">
-            查看公开主页
-          </Link>
-        </p>
+        <div className="flex items-center gap-3">
+          <Avatar size="lg" name={user.name} avatarBg={user.avatarBg} avatarFg={user.avatarFg} />
+          <div>
+            <h1 className="hp-page-title">{user.name} 的阅读空间</h1>
+            <p className="hp-hint mt-1">
+              <Link href={`/u/${encodeURIComponent(user.name)}`} className="text-[var(--paper-accent)] hover:underline">
+                查看公开主页
+              </Link>
+            </p>
+          </div>
+        </div>
 
         <nav className="mt-6 flex gap-2 border-b border-[var(--paper-line)]">
           {TABS.map((item) => (

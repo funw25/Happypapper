@@ -9,9 +9,6 @@
  * published comment (anonymous author, kept out of the danmaku layer, hidden
  * from the public profile). It restores every value it changes.
  */
-import { Buffer } from "node:buffer";
-import zlib from "node:zlib";
-
 const BASE = process.env.SMOKE_BASE ?? "http://127.0.0.1:3100";
 const IDENTIFIER = process.env.SMOKE_IDENTIFIER ?? "1706.03762";
 const READER = { email: "reader@happypaper.local", password: "reader12345" };
@@ -115,12 +112,13 @@ check("读取当前资料", Boolean(original?.name), original?.email ?? "?");
 const bio = `设置验证 ${new Date().toISOString()}`;
 const saved = await reader.patch("/api/me/profile", {
   name: original.name,
-  avatarUrl: "https://example.com/avatar.png",
   bio,
+  avatarBg: "#0B5FFF",
+  avatarFg: "#FFFFFF",
 });
 check(
-  "保存昵称、头像和简介",
-  saved.status === 200 && saved.body.profile?.bio === bio && saved.body.profile?.avatarUrl?.includes("example.com"),
+  "保存昵称、头像配色和简介",
+  saved.status === 200 && saved.body.profile?.bio === bio && saved.body.profile?.avatarBg === "#0B5FFF",
   `status ${saved.status}`,
 );
 
@@ -133,106 +131,58 @@ check("占用他人昵称被拒绝", clash.status === 409, `status ${clash.statu
 const badName = await reader.patch("/api/me/profile", { name: "a", bio });
 check("过短昵称被拒绝", badName.status === 400, `status ${badName.status}`);
 
-const badAvatar = await reader.patch("/api/me/profile", { name: original.name, avatarUrl: "javascript:alert(1)" });
-check("非 http 头像地址被拒绝", badAvatar.status === 400, `status ${badAvatar.status}`);
-
-// ---- 头像上传（第 5.2 节：头像可编辑） -------------------------------------
-// 真实 PNG：按 IHDR/IDAT/IEND 生成，服务端按文件头判断类型，所以这里不能拿假字节。
-function png(r, g, b) {
-  const table = (() => {
-    const entries = [];
-    for (let n = 0; n < 256; n++) {
-      let c = n;
-      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-      entries[n] = c >>> 0;
-    }
-    return entries;
-  })();
-  const crc32 = (buffer) => {
-    let c = 0xffffffff;
-    for (const byte of buffer) c = table[(c ^ byte) & 0xff] ^ (c >>> 8);
-    return (c ^ 0xffffffff) >>> 0;
-  };
-  const chunk = (type, data) => {
-    const length = Buffer.alloc(4);
-    length.writeUInt32BE(data.length);
-    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
-    const crc = Buffer.alloc(4);
-    crc.writeUInt32BE(crc32(body));
-    return Buffer.concat([length, body, crc]);
-  };
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(1, 0);
-  ihdr.writeUInt32BE(1, 4);
-  ihdr[8] = 8;
-  ihdr[9] = 2;
-  const idat = zlib.deflateSync(Buffer.from([0, r, g, b]));
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk("IHDR", ihdr),
-    chunk("IDAT", idat),
-    chunk("IEND", Buffer.alloc(0)),
-  ]);
-}
-
-async function uploadAvatar(client, bytes, filename = "avatar.png") {
-  const form = new FormData();
-  form.set("avatar", new Blob([bytes], { type: "image/png" }), filename);
-  return client.json("/api/me/avatar", { method: "POST", body: form });
-}
-
-const anonymousUpload = await fetch(`${BASE}/api/me/avatar`, { method: "POST" });
-check("未登录不能上传头像", anonymousUpload.status === 401, `status ${anonymousUpload.status}`);
-
-const firstAvatar = png(220, 60, 60);
-const uploaded = await uploadAvatar(reader, firstAvatar);
+// ---- 头像：昵称前两个字符 + 配色（第 5.2 节） ------------------------------
+const profileHtml = await (await reader.call("/settings/profile")).text();
+const initials = Array.from(original.name.replace(/\s+/g, "")).slice(0, 2).join("");
 check(
-  "上传 PNG 头像成功并返回站内地址",
-  uploaded.status === 200 && String(uploaded.body.image ?? "").startsWith("/api/avatars/"),
-  `status ${uploaded.status} ${uploaded.body.image ?? "-"}`,
+  "设置页用昵称前两个字符渲染头像",
+  profileHtml.includes(`>${initials}<`),
+  `期望字符 ${initials}`,
+);
+check(
+  "默认配色为克莱因蓝底白字",
+  original.avatarBg === "#002FA7" && original.avatarFg === "#FFFFFF",
+  `${original.avatarBg} / ${original.avatarFg}`,
 );
 
-const servedAvatar = await reader.call(uploaded.body.image);
-const servedBytes = Buffer.from(await servedAvatar.arrayBuffer());
+const recolored = await reader.patch("/api/me/profile", {
+  name: original.name,
+  bio,
+  avatarBg: "#123456",
+  avatarFg: "#fedcba",
+});
 check(
-  "头像地址可读且字节一致",
-  servedAvatar.status === 200 &&
-    servedAvatar.headers.get("content-type") === "image/png" &&
-    servedBytes.equals(firstAvatar),
-  `status ${servedAvatar.status} ${servedBytes.length}/${firstAvatar.length} 字节`,
+  "可以保存自定义底色与字色（自动转大写）",
+  recolored.status === 200 &&
+    recolored.body.profile?.avatarBg === "#123456" &&
+    recolored.body.profile?.avatarFg === "#FEDCBA",
+  `${recolored.body.profile?.avatarBg ?? "-"} / ${recolored.body.profile?.avatarFg ?? "-"}`,
 );
 
-const afterUpload = (await reader.json("/api/me/profile")).body.profile;
-check("资料接口返回上传后的头像地址", afterUpload?.avatarUrl === uploaded.body.image, afterUpload?.avatarUrl ?? "-");
-
-const savedWithoutAvatar = await reader.patch("/api/me/profile", { name: original.name, bio });
+const publicProfileHtml = await (await reader.call(`/u/${encodeURIComponent(original.name)}`)).text();
 check(
-  "保存资料时不带头像字段不会清掉上传的头像",
-  savedWithoutAvatar.status === 200 && savedWithoutAvatar.body.profile?.avatarUrl === uploaded.body.image,
-  savedWithoutAvatar.body.profile?.avatarUrl ?? "-",
+  "公开主页按新配色渲染头像",
+  publicProfileHtml.includes("#123456") && publicProfileHtml.includes(`>${initials}<`),
+  "公开主页",
 );
 
-const secondAvatar = png(60, 120, 220);
-const reuploaded = await uploadAvatar(reader, secondAvatar);
+const badColor = await reader.patch("/api/me/profile", {
+  name: original.name,
+  bio,
+  avatarBg: "blue",
+});
 check(
-  "再次上传会换成新地址",
-  reuploaded.status === 200 && reuploaded.body.image !== uploaded.body.image,
-  `${reuploaded.body.image ?? "-"}`,
+  "非法颜色被拒绝",
+  badColor.status === 400 && badColor.body.error === "INVALID_COLOR",
+  `status ${badColor.status} ${badColor.body.error ?? ""}`,
 );
 
-const oldAvatar = await reader.call(uploaded.body.image);
-check("旧头像对象已删除", oldAvatar.status === 404, `status ${oldAvatar.status}`);
-
-const notAnImage = await uploadAvatar(reader, Buffer.from("%PDF-1.4 not an image"), "fake.png");
-check(
-  "按文件头拒绝非图片（改后缀也没用）",
-  notAnImage.status === 400 && notAnImage.body.error === "UNSUPPORTED_TYPE",
-  `status ${notAnImage.status} ${notAnImage.body.error ?? ""}`,
-);
-
-const bigFile = await uploadAvatar(reader, Buffer.concat([png(0, 0, 0), Buffer.alloc(2 * 1024 * 1024)]));
-check("超过 2MB 的头像被拒绝", bigFile.status === 413, `status ${bigFile.status}`);
-
+const shortHex = await reader.patch("/api/me/profile", {
+  name: original.name,
+  bio,
+  avatarFg: "#fff",
+});
+check("三位简写颜色被拒绝（要求 #RRGGBB）", shortHex.status === 400, `status ${shortHex.status}`);
 // ---- privacy --------------------------------------------------------------
 const defaults = (await reader.json("/api/me/privacy")).body.privacy;
 check("读取隐私设置", typeof defaults?.anonymousDefault === "boolean", JSON.stringify(defaults));
@@ -364,8 +314,9 @@ await reader.patch("/api/me/privacy", defaults ?? {
 });
 await reader.patch("/api/me/profile", {
   name: original.name,
-  avatarUrl: original.avatarUrl,
   bio: original.bio,
+  avatarBg: original.avatarBg,
+  avatarFg: original.avatarFg,
 });
 const restored = await reader.json("/api/me/profile");
 check("验证结束后资料已还原", restored.body.profile?.bio === original.bio, restored.body.profile?.bio ?? "null");

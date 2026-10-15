@@ -2,6 +2,7 @@ import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { accounts, users } from "@/db/schema";
 import { hashPassword, passwordProblem, verifyPassword } from "@/lib/auth/password";
+import { avatarColors, isHexColor, normaliseHex } from "@/lib/avatar";
 
 /**
  * Read and write paths for the settings pages (docs/03-requirements.md 5, 6, 9).
@@ -25,7 +26,8 @@ export type AccountSettings = {
   email: string;
   emailVerified: boolean;
   pendingEmail: string | null;
-  avatarUrl: string | null;
+  avatarBg: string;
+  avatarFg: string;
   bio: string | null;
   role: string;
   hasPassword: boolean;
@@ -40,7 +42,8 @@ export async function getAccountSettings(userId: string): Promise<AccountSetting
       email: users.email,
       emailVerified: users.emailVerified,
       pendingEmail: users.pendingEmail,
-      avatarUrl: users.image,
+      avatarBg: users.avatarBg,
+      avatarFg: users.avatarFg,
       bio: users.bio,
       role: users.role,
       passwordHash: users.passwordHash,
@@ -51,6 +54,7 @@ export async function getAccountSettings(userId: string): Promise<AccountSetting
   if (!row) return null;
 
   const githubLogin = await githubLoginFor(userId);
+  const colors = avatarColors(row);
 
   return {
     id: row.id,
@@ -58,7 +62,8 @@ export async function getAccountSettings(userId: string): Promise<AccountSetting
     email: row.email,
     emailVerified: row.emailVerified !== null,
     pendingEmail: row.pendingEmail,
-    avatarUrl: row.avatarUrl,
+    avatarBg: colors.bg,
+    avatarFg: colors.fg,
     bio: row.bio,
     role: row.role,
     hasPassword: Boolean(row.passwordHash),
@@ -114,12 +119,11 @@ export async function updatePrivacySettings(
 const NAME_PATTERN = /^[\p{L}\p{N}_.\- ]+$/u;
 
 /**
- * `avatarUrl` 省略表示「不改动头像」：上传过头像的账号，其 `image` 是站内地址，
- * 保存昵称或简介时不能顺手把它清掉（表单里的外链字段此时是空的）。
+ * 昵称、简介与头像配色。颜色字段省略表示不改动：表单允许只改昵称。
  */
 export async function updateProfile(
   userId: string,
-  patch: { name: string; bio: string | null; avatarUrl?: string | null },
+  patch: { name: string; bio: string | null; avatarBg?: string; avatarFg?: string },
 ): Promise<AccountSettings> {
   const name = patch.name.trim();
   if (name.length < 2 || name.length > 24) {
@@ -146,12 +150,22 @@ export async function updateProfile(
     throw new SettingsError("INVALID_BIO", 400, "个人简介最多 300 字");
   }
 
+  for (const [field, value] of [
+    ["底色", patch.avatarBg],
+    ["字色", patch.avatarFg],
+  ] as const) {
+    if (value !== undefined && !isHexColor(value)) {
+      throw new SettingsError("INVALID_COLOR", 400, `头像${field}需要是 #RRGGBB 形式的颜色`);
+    }
+  }
+
   await db
     .update(users)
     .set({
       name,
       bio,
-      ...("avatarUrl" in patch ? { image: patch.avatarUrl ?? null } : {}),
+      ...(patch.avatarBg === undefined ? {} : { avatarBg: normaliseHex(patch.avatarBg) }),
+      ...(patch.avatarFg === undefined ? {} : { avatarFg: normaliseHex(patch.avatarFg) }),
     })
     .where(eq(users.id, userId));
 

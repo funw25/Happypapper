@@ -7,6 +7,8 @@ export type CurrentUser = {
   id: string;
   name: string;
   role: string;
+  avatarBg: string;
+  avatarFg: string;
 };
 
 export async function currentUser(): Promise<CurrentUser | null> {
@@ -15,7 +17,13 @@ export async function currentUser(): Promise<CurrentUser | null> {
   if (!id) return null;
 
   const [row] = await db
-    .select({ id: users.id, name: users.name, role: users.role })
+    .select({
+      id: users.id,
+      name: users.name,
+      role: users.role,
+      avatarBg: users.avatarBg,
+      avatarFg: users.avatarFg,
+    })
     .from(users)
     .where(eq(users.id, id))
     .limit(1);

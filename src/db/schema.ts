@@ -21,8 +21,12 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   name: text("name").notNull().unique(),
   // Named `image` because @auth/drizzle-adapter reads that property; the column
-  // keeps this project's name.
+  // keeps this project's name. Avatars are rendered from the nickname instead
+  // (see src/lib/avatar.ts), so this column only records what an OAuth provider
+  // supplied and is not used for display.
   image: text("avatar_url"),
+  avatarBg: text("avatar_bg").notNull().default("#002FA7"),
+  avatarFg: text("avatar_fg").notNull().default("#FFFFFF"),
   // Null for accounts created through GitHub, which have no local password yet.
   passwordHash: text("password_hash"),
   emailVerified: timestamp("email_verified", { withTimezone: true }),

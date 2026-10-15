@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { SiteHeader } from "@/components/site-header";
+import { Avatar } from "@/components/avatar";
 import { commentsByUser, profileByName } from "@/lib/me/queries";
 import { KIND_LABELS } from "@/lib/comments/types";
 
@@ -21,18 +22,12 @@ export default async function UserPage({ params }: { params: Promise<{ name: str
       <SiteHeader />
       <main className="hp-page-narrow">
         <div className="flex items-center gap-4">
-          {profile.image ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={profile.image}
-              alt={`${profile.name} 的头像`}
-              className="h-16 w-16 rounded-full border border-[var(--paper-line)] object-cover"
-            />
-          ) : (
-            <div className="flex h-16 w-16 items-center justify-center rounded-full border border-[var(--paper-line)] bg-[var(--paper-surface-muted)] text-lg text-[var(--paper-muted)]">
-              {profile.name.slice(0, 1)}
-            </div>
-          )}
+          <Avatar
+            size="lg"
+            name={profile.name}
+            avatarBg={profile.avatarBg}
+            avatarFg={profile.avatarFg}
+          />
           <div className="min-w-0">
             <h1 className="hp-page-title">{profile.name}</h1>
             <p className="hp-hint">
