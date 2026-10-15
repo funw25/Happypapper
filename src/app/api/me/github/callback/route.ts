@@ -6,6 +6,7 @@ import {
   GITHUB_LINK_COOKIE,
   githubCallbackUrl,
   githubCredentials,
+  githubEndpoints,
 } from "@/lib/auth/github";
 import { findGithubOwner } from "@/lib/auth/account";
 import { appUrl } from "@/lib/mailer";
@@ -51,10 +52,14 @@ export async function GET(request: Request) {
   const startedBy = separator > 0 ? cookie.slice(separator + 1) : "";
   if (expectedState !== state || startedBy !== user.id) return back("state_mismatch");
 
-  const tokenResponse = await fetch("https://github.com/login/oauth/access_token", {
+  const endpoints = githubEndpoints();
+
+  const tokenResponse = await fetch(endpoints.token, {
     method: "POST",
-    headers: { accept: "application/json", "content-type": "application/json" },
-    body: JSON.stringify({
+    headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded" },
+    // 按 OAuth 规范用表单编码：GitHub 两种都接受，但这就是 Auth.js 与其他客户端
+    // 发的东西，验证用的假提供方也按这个契约实现。
+    body: new URLSearchParams({
       client_id: credentials.id,
       client_secret: credentials.secret,
       code,
@@ -71,7 +76,7 @@ export async function GET(request: Request) {
   } | null;
   if (!tokenBody?.access_token) return back("token_exchange_failed");
 
-  const profileResponse = await fetch("https://api.github.com/user", {
+  const profileResponse = await fetch(endpoints.user, {
     headers: {
       accept: "application/vnd.github+json",
       authorization: `Bearer ${tokenBody.access_token}`,

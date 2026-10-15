@@ -6,19 +6,20 @@ import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { accounts, users } from "@/db/schema";
-import { githubCredentials, resolveGithubIdentity } from "@/lib/auth/github";
+import { githubCredentials, githubProviderOptions, resolveGithubIdentity } from "@/lib/auth/github";
 
 const github = githubCredentials();
 
 /**
  * GitHub is registered only when credentials exist, so a checkout without them
  * behaves exactly as before rather than showing a button that cannot finish.
+ * `GITHUB_BASE_URL` switches all three endpoints at once (GitHub Enterprise, or
+ * the local fake provider used to verify the handshake).
  */
 const githubProvider = github
   ? [
       GitHub({
-        clientId: github.id,
-        clientSecret: github.secret,
+        ...githubProviderOptions(),
         // GitHub does not always return a usable email or a unique display name;
         // this normalises both before the adapter inserts a row.
         profile: (profile) => resolveGithubIdentity(profile),

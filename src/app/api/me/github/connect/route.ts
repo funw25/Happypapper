@@ -8,6 +8,7 @@ import {
   githubCallbackUrl,
   githubCredentials,
   githubEnabled,
+  githubEndpoints,
 } from "@/lib/auth/github";
 
 /**
@@ -36,7 +37,7 @@ export async function GET() {
 
   const credentials = githubCredentials();
   const state = randomBytes(16).toString("base64url");
-  const authorize = new URL("https://github.com/login/oauth/authorize");
+  const authorize = new URL(githubEndpoints().authorize);
   authorize.searchParams.set("client_id", credentials!.id);
   authorize.searchParams.set("redirect_uri", githubCallbackUrl());
   // 只读取公开资料与邮箱，绑定不需要仓库权限。

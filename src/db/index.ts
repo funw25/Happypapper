@@ -11,7 +11,16 @@ import * as schema from "./schema";
  * 进程内的 PGlite（本地开发与验证形态）。两边的 schema 完全一样，迁移文件是同一批
  * 手写 SQL，因此切换后端不需要改任何查询代码。
  */
-function createDb() {
+/**
+ * 两个驱动共有的类型。写成联合（`PgliteDatabase | NodePgDatabase`）会让
+ * `.returning({...})` 这类带重载的 builder 方法解析到错误的重载（报「Expected 0
+ * arguments, but got 1」），因此对外统一按 PgDatabase 这个基类标注；查询结果的
+ * 类型参数只能放宽到 any，两个驱动的 QueryResult 形状不同，收窄会让实现无法赋值。
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Db = PgDatabase<any, typeof schema>;
+
+function createDb(): Db {
   const url = process.env.DATABASE_URL?.trim();
   if (url) {
     const pool = new Pool({ connectionString: url, max: 10 });
@@ -25,8 +34,6 @@ function createDb() {
   const client = new PGlite(dataDir);
   return drizzlePglite(client, { schema });
 }
-
-type Db = ReturnType<typeof createDb>;
 
 const globalForDb = globalThis as unknown as { __hpDb?: Db };
 

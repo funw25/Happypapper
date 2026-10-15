@@ -74,7 +74,7 @@ MVP 已按 `00-mvp-spec.md` 冻结的范围实现完毕，四个验证脚本全�
 | B6 | 完成 | 远程论文搜索 | 按标题、作者、arXiv ID 或 DOI 检索，结果可进入详情页 | `verify:smoke` 的检索项 | 1 人日 |
 | B6 余项 | 完成 | 论文获取模型 | 检索缓存与限流、元数据与 PDF 状态分离、无 PDF 也能入库、外部来源与错误状态 | `npm run verify:search`（含缓存与元数据入库项）、`npm run verify:search-fallback` | 1 人日 |
 | B3 余项 | 完成 | 对象存储 | PDF 可放在 S3 兼容存储，切换驱动不需要改业务代码 | `npm run verify:storage`（local 与 s3 各 11/11）、`npm run storage:migrate` | 0.5 人日 |
-| B7 | 进行中 | GitHub 登录 | GitHub OAuth 登录与账号绑定 | `npm run verify:github` | 1 人日 |
+| B7 | 进行中 | GitHub 登录 | GitHub OAuth 登录与账号绑定 | `npm run verify:github-flow`（16/16，假提供方）、`npm run verify:github` | 1 人日 |
 | B8 | 完成 | 管理员种子 | Florence 与 α 两个管理员账号 | `verify:smoke` 的管理员权限项 | 0.25 人日 |
 
 B6 与 B8 在 B2 之前完成，依据是 B5 冷启动验证要求真实读者自行找到论文，而 B6 未完成时读者必须自带 arXiv ID 或 DOI。B7 与 B8 的需求出处为 `docs/03-requirements.md` 的 AUTH-008 至 AUTH-013 与第 2.3 节。分块状态与每轮记录以 `docs/04-worklog.md` 为准。B6 余项与产品基础（个人资料、隐私设置与主题）按四阶段计划实施，阶段顺序与依据见 `docs/04-worklog.md` 第 2.3 节。

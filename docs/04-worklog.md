@@ -23,6 +23,7 @@
 | `npm run verify:account` | 31/31（第 13 轮新增，未配置 OAuth 时）；36/36（同一脚本在临时假凭据下运行，额外覆盖绑定授权的跳转与 state 校验） |
 | `npm run verify:load` | 160 个请求 0 个 5xx、无连接错误（第 14 轮新增，需对生产服务器运行；p50 18ms、p95 89ms） |
 | `npm run verify:storage` | 11/11（第 16 轮新增；local 与 s3 两个驱动各跑一次，含完整内容与 Range 区间的逐字节比对） |
+| `npm run verify:github-flow` | 16/16（第 17 轮新增；需假提供方，PostgreSQL 与 PGlite 各跑一遍） |
 | `npm run verify:anchor` | 12/12 |
 | `npm run verify:reader` | 15/15（R1 已修复，连跑 5 次偏差 0.0px） |
 | `npm run verify:settings` | 27/27（第 11 轮新增，覆盖资料、密码、隐私三项与评论署名联动） |
@@ -67,8 +68,8 @@ B8（管理员种子缺少 Florence 与 α）已于第 2 轮完成，B6（远程
 | 项 | 状态 |
 | --- | --- |
 | 生产运行时（`npm run start`） | **已验证（第 14 轮）**。`npm run build` 退出码 0、0 条追踪警告；`npm start` 下 `verify:smoke` 63/63、`verify:settings` 27/27、`verify:load` 160 请求 0 个 5xx，服务端日志为空。首轮验证即抓到并修复了只在生产模式出现的 EMFILE 崩溃 |
-| GitHub OAuth 握手 | 未验证。provider 注册、授权跳转、PKCE 已用假凭据验证（`verify:github` 14/14）；账号绑定的授权跳转与 state 校验也已在假凭据下通过（`verify:account` 36/36）。剩下的只有 GitHub 侧的回调、token 交换与首登建号，需要真实 `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` 加一次浏览器登录 |
-| 解绑保护的「唯一登录方式」分支 | 未触发。`unlinkGithub` 在没有本地密码时返回 409，但要造出「只绑定 GitHub、没有密码」的账号需要真实 GitHub 绑定，因此这条分支只有代码与单元级证据，没有端到端证据 |
+| GitHub OAuth 握手 | **握手之后的全部逻辑已在本地假提供方上端到端验证（第 17 轮，`verify:github-flow` 16/16）**：首登建号、昵称去重、邮箱回落、绑定、绑定后登录进同一账号、身份唯一、解绑保护、正常解绑。仍缺：真实 GitHub 的授权页与回调注册、真实 token 响应、企业版差异，需要用户提供 `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` 并注册两个 Redirect URI |
+| 解绑保护的「唯一登录方式」分支 | **已触发（第 17 轮）**：GitHub 首登账号没有本地密码，点解绑后服务端返回 409、页面提示先设置密码，且绑定仍然存在 |
 | 邮件投递 | 未接入。`src/lib/mailer.ts` 只实现写日志传输；流程本身（令牌、过期、一次性、页面）已端到端验证，真实投递需要 SMTP 凭据 |
 | 真实 PostgreSQL | **代码已完成并在真实 Postgres 上验证（第 15 轮）**：`DATABASE_URL` 切换后端、迁移/种子/重置脚本双后端、`npm run pg:start` 本地起真实 Postgres 18，`verify:smoke` 63/63、`verify:settings` 27/27、`verify:account` 31/31。仍缺：用户自己的生产实例（托管服务的连接串参数、TLS、连接数上限与本地二进制不同），以及 Postgres 侧的 `pg_dump` 备份演练 |
 | 对象存储 | **代码与本地 S3 兼容端点验证完成（第 16 轮）**：`STORAGE_DRIVER=s3` 的四个方法、`npm run s3:start` 本地端点、`storage:migrate` 幂等迁移、`verify:storage` 两个驱动各 11/11。仍缺：用户自己的桶（签名校验、分片上传、存储类别与生命周期策略与 s3rver 不同） |
@@ -102,6 +103,29 @@ B8（管理员种子缺少 Florence 与 α）已于第 2 轮完成，B6（远程
 ---
 
 ## 三、工作日志
+
+### 2026-10-16 第 17 轮：GitHub 登录与绑定的端到端验证（用本地假提供方）
+
+**结论：握手之后的每条分支都被真实执行过，`verify:github-flow` 16/16。** 覆盖首登建号、昵称去重、邮箱回落、绑定到当前账号、绑定后登录进同一账号、同一身份不可二次绑定、解绑保护、正常解绑。真实 GitHub 侧（回调注册、真实 token 响应）仍需用户凭据做一次冒烟，见 2.2 节。
+
+需求依据：`docs/03-requirements.md` AUTH-008 至 AUTH-013。此前这三条只做到「接线用假凭据验证过」，绑定与解绑保护的逻辑分支从未真正跑过。
+
+做了什么：
+
+1. `GITHUB_BASE_URL` 把授权、换令牌、读取身份三个地址一起切换：Auth.js 侧用它内置的 `enterprise.baseUrl`，自建的绑定回调读 `githubEndpoints()`。两条链路必须同时改指，否则一条连 github.com、另一条连别处。真实 GitHub 不设置该变量即走默认。
+2. 新增 `scripts/github-fake.mjs`：实现 `/login/oauth/authorize`、`/login/oauth/access_token`、`/api/v3/user`、`/api/v3/user/emails` 四个端点，身份由 `POST /__identity` 指定（四个身份分别覆盖有邮箱有昵称、昵称与已有用户重名、无邮箱无昵称、用于绑定的普通身份）。
+3. 新增 `scripts/verify-github-flow.mjs`：真实浏览器走完登录与绑定，逐条断言会话、账号安全页文案与登录方式接口。其中「绑定的身份用 GitHub 登录会进入同一个账号」是关键一项——它证明绑定写入的 `provider_account_id` 与 Auth.js 登录查询用的是同一约定；两者不一致时 GitHub 登录会另建账号，而这种错误只有真跑一次才看得见。
+4. 账号安全页的绑定信息不再显示数字的 provider account id（对读者没有意义），改为「已绑定 GitHub 账号。」并把 id 放进 `title`。
+
+三处由实测决定的实现细节：
+
+- **绑定回调改用表单编码换令牌。** 之前发 JSON；GitHub 两种都接受，但标准与 Auth.js 都用表单编码，假提供方按标准实现时 JSON 直接被解析成空参数。改回标准形式，假提供方也就能保持严格而不必迁就。
+- **身份必须由提供方控制端点切换，不能靠浏览器 cookie。** 最初用 cookie 传身份，`Domain` 属性在 IP 主机上会被丢弃，于是每个用例都落到默认身份——表现是「换了身份但账号没变」，看起来像业务缺陷，实际是测试装置失效。
+- **`NEXTAUTH_URL` 与访问地址必须一致。** Auth.js 的 state 与 PKCE cookie 按该地址下发；用 127.0.0.1 打开而配置是 localhost 时，回调落在另一个 host，握手在换令牌之前就失败，且日志里看不出原因。
+
+**本轮踩到的坑：残留的 GitHub 绑定会让登录进错账号。** 早期几轮验证在本地 PGlite 库里留下了四行 `accounts`（100001/100002/100003 都指向 alice、100004 指向 dave）。Auth.js 先按 `provider_account_id` 查账号，于是 bob 与 carol 的登录直接进了 alice 的账号，脚本报「昵称与邮箱不对」，看上去像业务缺陷。定位方式是把同样的流程放到刚 `db:reset` 过的 PostgreSQL 上跑，三条登录立刻全部正确——说明是数据残留而不是代码。已清理本地残留（`accounts` 4 → 0，删掉两个 GitHub 专用账号，论文与评论未动），并给脚本加了检测：身份登录成别人时以退出码 2 报「不判定」并提示先重置数据库。
+
+**验证证据（PostgreSQL 18.4 与默认 PGlite 各跑一遍，均 16/16）。** Postgres 侧的行：`github/100001 → Alice GitHub`、`github/100002 → reader-2`、`github/100003 → carol-gh`，三个账号均无本地密码、邮箱与昵称符合各自身份；reader 的 `github/100004` 在最后一步解绑后消失。
 
 ### 2026-10-16 第 16 轮：第四阶段——对象存储驱动与磁盘到桶的迁移
 

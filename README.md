@@ -129,6 +129,7 @@ npm run typecheck             # tsc --noEmit
 | `verify:github` | GitHub 登录接线与首登昵称规则：昵称未被占用时保持原样、被占用时自动加后缀、为空时回落默认名、长度截断、候选耗尽时仍返回可用昵称、无邮箱时回落 noreply；密码登录仍注册、凭据存在时注册 GitHub provider 并显示按钮、发起登录跳转到 GitHub 授权页、带 client_id、回调指向本应用、使用 PKCE 并下发 CSRF 与 PKCE cookie；凭据缺失时断言 GitHub 被正确关闭并以退出码 2 报告 AUTH-008 待定。**不含** OAuth 回调、token 交换与首登建号，那需要真实 GitHub 账号与浏览器 |
 | `verify:github-schema` | OAuth 首次登录要写的表结构：可以创建没有本地密码的账号、可以把 GitHub 身份写入 `accounts`、同一 GitHub 身份不能被重复绑定、同名账号被拒绝、删除账号会级联删除绑定、检查过程不留下数据。需要先停开发服务器，全程事务回滚 |
 | `verify:account` | 账号闭环：三个页面可访问；账号安全页含邮箱验证、修改邮箱与 GitHub 绑定入口；给当前邮箱发验证邮件并从开发服务器日志取回令牌、确认后邮箱标记已验证、同一令牌不能重复使用；改成他人占用的邮箱返回 409、改成新地址先进入待确认状态、确认后新邮箱生效且旧邮箱不再能登录；未绑定 GitHub 时解绑返回 `NOT_LINKED`、未登录的解绑与绑定发起返回 401；配置 OAuth 后绑定发起跳转 GitHub 授权页并带 client_id、自建回调地址、只读 scope 与 HttpOnly state cookie，回调在 state 不匹配或缺 cookie 时回到账号页说明原因；未注册邮箱申请找回返回同样响应（不枚举用户）、过短新密码被拒、令牌一次性、新旧密码登录结果、找回接口限流。邮件通道未配置时链接写入开发服务器日志，脚本按请求偏移从日志取令牌，没有测试专用旁路 |
+| `verify:github-flow` | GitHub 登录与绑定的完整链路（真实浏览器 + 真实 HTTP + 本地假提供方）：首登自动建号并使用 GitHub 昵称邮箱；昵称与已有用户重名时自动加后缀；无公开邮箱时回落到登录名与占位邮箱；邮箱账号可把 GitHub 绑到当前账号并报告两种登录方式；绑定的身份用 GitHub 登录会进入同一个账号（证明绑定写入的 `provider_account_id` 与 Auth.js 登录查询用的是同一约定）；同一 GitHub 身份不能绑到第二个账号；只剩 GitHub 一种登录方式时拒绝解绑且绑定保留；有本地密码时可以解绑 |
 | `verify:anchor` | 用真实 PDF（Attention Is All You Need 第 4 页的 175 个文本项）验证引用定位，并验证**重新分块、大小写变化、空格变化、连字符换行**后仍能定位；同一句出现两次时用前后文选中正确的一处 |
 | `verify:reader` | 真实浏览器：登录后打开阅读器，确认画布与文本层渲染、在文本层建立选区并转成锚点草稿、发布评论、服务端保存引用与前后文，**刷新后位置标记偏差 0.0px**、**缩放到 160% 后标记仍跟随文本**、无前端异常 |
 | `verify:settings` | `/settings/profile`、`/settings/account`、`/settings/privacy` 三个页面可访问且未登录被重定向；昵称、头像、简介保存后刷新仍在；占用他人昵称返回 409、过短昵称 400、非 http 头像地址 400；三个隐私开关保存后刷新生效；默认匿名设置使新评论的署名在接口响应里就是 `null` 且 `isAnonymous` 为真；关闭弹幕后新评论 `visibleInDanmaku` 为假；关闭主页评论后公开主页不列评论并给出说明；显式取消匿名时按公开昵称署名；密码修改的三种结果（当前密码错误 403、新密码过短 400、正确 200）与用新密码重新登录；结束时还原资料、隐私设置与密码 |
@@ -138,6 +139,22 @@ npm run typecheck             # tsc --noEmit
 `verify:search` 与 `verify:smoke` 分开，原因是每次检索会向上游 OpenAlex 发两个请求，而 OpenAlex 按 IP 限流（实测会回 `Retry-After: 24511`，约 6.8 小时）。把它放进主基线会让基线依赖一个有速率限制的外部服务。脚本内两次检索之间默认间隔 1200ms，可用 `SEARCH_GAP_MS` 调大；上游不可用时退出码 2，表示结论待定而不是代码回归。接口区分三类失败：`UPSTREAM_RATE_LIMITED`（上游限流）、`UPSTREAM_UNAVAILABLE`（上游故障或超时）、`SEARCH_RATE_LIMITED`（本项目的限流，回 429 并带 `Retry-After`），三者都会在有缓存时回退展示缓存结果并在响应里标记 `stale`。
 
 `verify:reader` 用 `puppeteer-core` 驱动本机已安装的 Chrome 或 Edge，不下载浏览器。换路径用 `CHROME_PATH`。
+
+### 没有真实 GitHub 凭据时怎么验证登录
+
+真实的 client id / secret 只有账号所有者能拿到，但握手之后的代码都在本地。`npm run github:fake` 起一个实现同样 HTTP 契约的假提供方，`GITHUB_BASE_URL` 让登录（Auth.js 的 `enterprise.baseUrl`）与绑定（自建回调）两条链路同时改指到它：
+
+```bash
+npm run github:fake                                   # 另一个终端，默认 127.0.0.1:4569
+$env:GITHUB_BASE_URL = "http://127.0.0.1:4569"
+$env:AUTH_GITHUB_ID = "fake-client-id"
+$env:AUTH_GITHUB_SECRET = "fake-client-secret"
+npm run dev
+$env:SMOKE_BASE = "http://localhost:3100"             # 必须与 NEXTAUTH_URL 一致
+npm run verify:github-flow
+```
+
+两个前提：访问地址与 `NEXTAUTH_URL` 一致（否则 Auth.js 的 state/PKCE cookie 跨 host 带不过去），以及数据库里没有旧的 GitHub 绑定残留（早期失败的运行会留下把某个身份指到别的账号的行，Auth.js 先按 `provider_account_id` 查账号，于是登录成别人）。脚本检测到这种残留时以退出码 2 报「不判定」并提示 `npm run db:reset`，而不是报成回归。真实的 GitHub 侧（回调注册、token 交换的真实响应、企业版差异）仍需自己的凭据做一次冒烟。
 
 **已修复的不稳定**：`verify:reader` 的「缩放后位置标记跟随文本重新定位」曾间歇失败（固定偏差 54.6px）。原因是脚本在 PDF 按新比例重排完成前就取样，`expectedZoom` 用的是未缩放高度；产品最终状态一直是正确的。脚本已改为等画布尺寸稳定后再取样，连跑 5 次偏差均为 0.0px。详见 [docs/04-worklog.md](docs/04-worklog.md) 第 2.1 节 R1。
 

@@ -45,8 +45,8 @@ export function GithubLink({
     <section className="hp-card hp-stack p-6">
       <h2 className="hp-section-title">GitHub 账号</h2>
       {githubLogin ? (
-        <p className="text-sm">
-          已绑定 <span className="font-medium">{githubLogin}</span>。
+        <p className="text-sm" title={`provider account id: ${githubLogin}`}>
+          已绑定 GitHub 账号。
         </p>
       ) : (
         <p className="text-sm">
