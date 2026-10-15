@@ -73,6 +73,7 @@ MVP 已按 `00-mvp-spec.md` 冻结的范围实现完毕，四个验证脚本全�
 | B5 | 未开始 | 真人冷启动验证 | 2 至 3 名真实读者的使用结论 | 不下代码，看行为 | 0.5 人日 |
 | B6 | 完成 | 远程论文搜索 | 按标题、作者、arXiv ID 或 DOI 检索，结果可进入详情页 | `verify:smoke` 的检索项 | 1 人日 |
 | B6 余项 | 完成 | 论文获取模型 | 检索缓存与限流、元数据与 PDF 状态分离、无 PDF 也能入库、外部来源与错误状态 | `npm run verify:search`（含缓存与元数据入库项）、`npm run verify:search-fallback` | 1 人日 |
+| B3 余项 | 完成 | 对象存储 | PDF 可放在 S3 兼容存储，切换驱动不需要改业务代码 | `npm run verify:storage`（local 与 s3 各 11/11）、`npm run storage:migrate` | 0.5 人日 |
 | B7 | 进行中 | GitHub 登录 | GitHub OAuth 登录与账号绑定 | `npm run verify:github` | 1 人日 |
 | B8 | 完成 | 管理员种子 | Florence 与 α 两个管理员账号 | `verify:smoke` 的管理员权限项 | 0.25 人日 |
 

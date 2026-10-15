@@ -16,3 +16,6 @@ backups
 
 # 本地嵌入式 Postgres 的数据目录（npm run pg:start）
 .pgdata-dev
+
+# 本地 S3 兼容服务端的数据目录（npm run s3:start）
+.s3-dev

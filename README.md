@@ -49,6 +49,34 @@ npm run db:migrate ; npm run db:seed ; npm run dev
 
 `pg:start` 只是本地验证工具，生产不经过它。**已验证**（2026-10-16，PostgreSQL 18.4）：9 个迁移全部应用且重跑幂等、种子账号写入成功、`verify:smoke` 63/63、`verify:settings` 27/27、`verify:account` 31/31 全部对着真实 Postgres 跑通，数据确认落在 Postgres 表中；切回默认 PGlite 后原有 4 篇论文与评论未受影响。
 
+## 存储后端
+
+PDF 存放位置由 `STORAGE_DRIVER` 决定，接口只有 `put` / `getStream` / `stat` / `delete`，因此切换驱动不需要改任何业务代码：
+
+| `STORAGE_DRIVER` | 后端 | 配置 |
+| --- | --- | --- |
+| 未设置（默认） | 本机磁盘 `storage/pdfs` | `STORAGE_DIR` |
+| `s3` | 任意 S3 兼容对象存储（AWS S3、R2、MinIO、OSS 的 S3 端点） | `S3_BUCKET`（必需）、`S3_REGION`、`S3_ENDPOINT`、`S3_ACCESS_KEY_ID`、`S3_SECRET_ACCESS_KEY`、`S3_FORCE_PATH_STYLE` |
+
+规则与数据库一致：显式写了 `STORAGE_DRIVER` 就用它，没写但配置了 `S3_BUCKET` 就用 s3，否则用本机磁盘。服务器启动时会打印一行 `[storage] driver=…`，`verify:storage` 就靠这一行确认自己验的是哪个驱动，而不是靠猜。
+
+**本地想验证对象存储**，不必先准备桶：
+
+```bash
+npm run s3:start                 # 前台起一个 S3 兼容服务端（s3rver，数据在 .s3-dev/）
+# 另一个终端：
+$env:STORAGE_DRIVER = "s3" ; $env:S3_BUCKET = "happypaper-pdfs"
+$env:S3_ENDPOINT = "http://127.0.0.1:4568"
+$env:S3_ACCESS_KEY_ID = "S3RVER" ; $env:S3_SECRET_ACCESS_KEY = "S3RVER"
+npm run storage:migrate          # 把 storage/pdfs 里已有的 PDF 复制进桶（幂等）
+npm run dev
+npm run verify:storage           # 加 EXPECT_STORAGE_DRIVER=s3
+```
+
+`storage:migrate` 是切换驱动时**必需**的一步：`pdf_path` 存的是对象键、不含驱动信息，切到 s3 之后库里的键指向的正是桶里的对象，原来的文件不会自己跟过去；少了这一步页面会显示「可在线阅读」而点开是 404。脚本幂等，已存在且大小相同的对象跳过。
+
+**已验证**（2026-10-16）：`verify:storage` 在 local 与 s3 两个驱动下各 11/11（上传、完整下载逐字节比对、Range 区间逐字节比对、越界 416、下架删除后 404），S3 侧 `verify:smoke` 63/63，桶内对象数与迁移数一致，切回 local 后原有 8 个 PDF 照常提供。本机验证用的是 s3rver，不等于真实对象存储：签名校验、存储类别与生命周期策略仍需在你的桶上复测一次。
+
 ### 环境注意
 
 1. **数据库不在项目目录内。** 数据目录由 `PGLITE_DATA_DIR` 指定，默认 `../happypaper-data/pgdata`，即仓库旁边。原因是 Next.js 开发服务器会监视项目树，而 Postgres 每次查询都会写 WAL 与统计文件；数据库放在项目内会形成「写文件 → 重新编译 → 页面重载 → 再查询」的死循环。
