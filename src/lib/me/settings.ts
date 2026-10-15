@@ -113,9 +113,13 @@ export async function updatePrivacySettings(
 
 const NAME_PATTERN = /^[\p{L}\p{N}_.\- ]+$/u;
 
+/**
+ * `avatarUrl` 省略表示「不改动头像」：上传过头像的账号，其 `image` 是站内地址，
+ * 保存昵称或简介时不能顺手把它清掉（表单里的外链字段此时是空的）。
+ */
 export async function updateProfile(
   userId: string,
-  patch: { name: string; avatarUrl: string | null; bio: string | null },
+  patch: { name: string; bio: string | null; avatarUrl?: string | null },
 ): Promise<AccountSettings> {
   const name = patch.name.trim();
   if (name.length < 2 || name.length > 24) {
@@ -144,7 +148,11 @@ export async function updateProfile(
 
   await db
     .update(users)
-    .set({ name, image: patch.avatarUrl, bio })
+    .set({
+      name,
+      bio,
+      ...("avatarUrl" in patch ? { image: patch.avatarUrl ?? null } : {}),
+    })
     .where(eq(users.id, userId));
 
   const saved = await getAccountSettings(userId);

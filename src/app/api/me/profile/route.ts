@@ -35,10 +35,15 @@ export async function PATCH(request: Request) {
     const parsed = bodySchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return jsonError("INVALID_INPUT", 400, "昵称需要 2 到 24 个字符");
 
+    // 字段缺失＝不改动头像；显式传 null 或空串＝清掉。上传过头像的账号在保存昵称时
+    // 不会把站内头像地址覆盖掉。
+    const avatar =
+      parsed.data.avatarUrl === undefined ? undefined : normaliseAvatarUrl(parsed.data.avatarUrl);
+
     const saved = await updateProfile(user.id, {
       name: parsed.data.name,
-      avatarUrl: normaliseAvatarUrl(parsed.data.avatarUrl),
       bio: parsed.data.bio ?? null,
+      ...(avatar === undefined ? {} : { avatarUrl: avatar }),
     });
     return NextResponse.json({ profile: saved });
   } catch (error) {

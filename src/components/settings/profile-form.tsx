@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { AvatarUpload } from "./avatar-upload";
 
 export type ProfileFormValues = {
   name: string;
@@ -11,14 +12,21 @@ export type ProfileFormValues = {
 
 export function ProfileForm({ initial }: { initial: ProfileFormValues }) {
   const router = useRouter();
+  // 上传得到的头像是站内地址（/api/avatars/…），不放进「外链地址」输入框：那个框
+  // 只表示外部图片地址，留空时不能把上传的头像清掉。
+  const uploaded = Boolean(initial.avatarUrl?.startsWith("/api/avatars/"));
   const [name, setName] = useState(initial.name);
-  const [avatarUrl, setAvatarUrl] = useState(initial.avatarUrl ?? "");
+  const [avatarUrl, setAvatarUrl] = useState(uploaded ? "" : (initial.avatarUrl ?? ""));
   const [bio, setBio] = useState(initial.bio ?? "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
 
-  const avatarPreview = avatarUrl.trim().startsWith("http") ? avatarUrl.trim() : null;
+  const avatarPreview = avatarUrl.trim().startsWith("http")
+    ? avatarUrl.trim()
+    : uploaded
+      ? (initial.avatarUrl as string)
+      : null;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -26,10 +34,16 @@ export function ProfileForm({ initial }: { initial: ProfileFormValues }) {
     setError(null);
     setSaved(null);
 
+    const trimmed = avatarUrl.trim();
     const response = await fetch("/api/me/profile", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name, avatarUrl: avatarUrl.trim() || null, bio }),
+      body: JSON.stringify({
+        name,
+        bio,
+        // 外链为空且当前头像是上传的：整个字段不发，服务端保持原样。
+        ...(trimmed ? { avatarUrl: trimmed } : uploaded ? {} : { avatarUrl: null }),
+      }),
     });
     const payload = await response.json().catch(() => ({}));
     setPending(false);
@@ -74,6 +88,8 @@ export function ProfileForm({ initial }: { initial: ProfileFormValues }) {
           <p className="hp-hint">填写公开可访问的图片链接，留空则使用昵称首字。</p>
         </div>
       </div>
+
+      <AvatarUpload current={avatarPreview} />
 
       <div className="hp-field">
         <label className="hp-label" htmlFor="name">
