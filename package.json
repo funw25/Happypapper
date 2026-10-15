@@ -1,0 +1,47 @@
+{
+  "name": "happypaper",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3100",
+    "build": "next build",
+    "start": "next start --port 3100",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "node --env-file-if-exists=.env.local scripts/db-migrate.mjs",
+    "db:seed": "node --env-file-if-exists=.env.local scripts/db-seed.mjs",
+    "db:reset": "node --env-file-if-exists=.env.local scripts/db-reset.mjs",
+    "verify:smoke": "node scripts/smoke.mjs",
+    "verify:notify": "node scripts/verify-notify.mjs",
+    "verify:github": "node scripts/verify-github.mjs",
+    "verify:github-schema": "node scripts/verify-github-schema.mjs",
+    "verify:anchor": "node scripts/verify-anchor.mjs",
+    "verify:search": "node scripts/verify-search.mjs",
+    "verify:search-fallback": "node scripts/verify-search-fallback.mjs",
+    "verify:search-ui": "node scripts/verify-search-ui.mjs",
+    "verify:settings": "node scripts/verify-settings.mjs",
+    "verify:theme": "node scripts/verify-theme.mjs",
+    "verify:reader": "node scripts/verify-reader.mjs",
+    "pdf:worker": "node scripts/copy-pdf-worker.mjs"
+  },
+  "dependencies": {
+    "@auth/drizzle-adapter": "^1.11.3",
+    "@electric-sql/pglite": "^0.5.9",
+    "bcryptjs": "^3.0.3",
+    "drizzle-orm": "^0.45.4",
+    "next": "^16.4.0",
+    "next-auth": "^5.0.0-beta.32",
+    "pdfjs-dist": "^6.4.299",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "puppeteer-core": "^25.13.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2"
+  }
+}

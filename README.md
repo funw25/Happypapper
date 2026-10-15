@@ -1,0 +1,149 @@
+# HappyPaper
+
+面向论文阅读的位置化评论与实时弹幕平台。读者在论文的具体位置留下评论，后来的读者读到同一位置时看到这些评论。
+
+范围定义见 [docs/00-mvp-spec.md](docs/00-mvp-spec.md)，技术栈决策见 [docs/01-stack-decision.md](docs/01-stack-decision.md)。
+
+## 运行
+
+不需要 Docker，也不需要单独安装数据库：PGlite 在进程内运行 Postgres。
+
+```bash
+npm install --ignore-scripts   # esbuild 的 postinstall 在受限沙箱下会失败，忽略它不影响本项目
+npm run db:migrate             # 建表
+npm run db:seed                # 创建 admin / reader 两个本地账号
+npm run pdf:worker             # 把 pdf.js worker 复制到 public/
+npm run dev                    # http://localhost:3100
+```
+
+打开 `http://localhost:3100`，用 `reader@happypaper.local` / `reader12345` 登录，进论文点「开始阅读」。
+
+本地账号：
+
+| 邮箱 | 密码 | 角色 |
+| --- | --- | --- |
+| admin@happypaper.local | admin12345 | 管理员 |
+| reader@happypaper.local | reader12345 | 普通用户 |
+| florence@happypaper.com | florence12345 | 管理员（Florence） |
+| alpha@happypaper.com | alpha12345 | 管理员（α） |
+
+### 环境注意
+
+1. **数据库不在项目目录内。** 数据目录由 `PGLITE_DATA_DIR` 指定，默认 `../happypaper-data/pgdata`，即仓库旁边。原因是 Next.js 开发服务器会监视项目树，而 Postgres 每次查询都会写 WAL 与统计文件；数据库放在项目内会形成「写文件 → 重新编译 → 页面重载 → 再查询」的死循环。
+2. **用 `localhost` 而不是 `127.0.0.1` 打开。** 两个来源都已加入 `allowedDevOrigins`；若新增其他来源，需要同步加进 `next.config.mjs`，否则页面会渲染但不 hydrate。
+3. **迁移前先停掉开发服务器。** PGlite 同一时刻只允许一个进程打开数据目录。
+4. **被强杀后** PGlite 可能在下次启动时直接 abort（Postgres 崩溃恢复在它的单进程模式下不生效）。恢复命令：
+
+```bash
+npm run db:reset     # 删除数据目录，重新执行全部迁移与种子
+```
+
+5. **`PGLITE_DATA_DIR` 必须由 `serverExternalPackages` 保住。** `next.config.mjs` 里的 `serverExternalPackages: ["@electric-sql/pglite"]` 不是可选优化。缺了它，Turbopack 会把 PGlite 加载 `pglite.wasm` 用的 `new URL("./pglite.wasm", import.meta.url)` 重写成自己的 `relativeURL` 垫片，`fs` 以 `ERR_INVALID_ARG_TYPE` 拒绝，于是开发服务器与生产构建的 stderr 都刷满 `RuntimeError: Aborted()` 与 `PGlite failed to initialize properly`。加回这一行后 stderr 完全干净。
+6. **开发服务器崩溃后先删 `.next` 再重启。** 修改 `next.config.mjs` 会触发服务器自动重启，重启期间 Turbopack 的持久缓存可能损坏并 panic（`failed to open ... .sst`），进程直接 Aborting。处理方式：`Remove-Item .next -Recurse -Force`，然后 `npm run dev`。
+7. **后台启停要确认子进程真的退出。** `npm run dev` 会派生出 `next dev` 子进程；包装进程结束时子进程可能仍然存活并占着 3100 端口与数据库目录锁，表现为再次启动时报 `EADDRINUSE`、或直接操作数据库时报 PGlite abort。
+8. **本地数据在修复前不可信，修复后未复测。** 在第 5 条的修复之前观察到：开发服务器崩溃后，数据目录回到 `npm run db:reset` 写入的状态，运行期导入的论文、评论、注册用户全部消失；单独验证过普通 Node 进程被强杀时已提交的行会保留，所以丢失只出现在开发服务器这条路径。修复针对的正是那条路径的初始化失败，症状应当随之消失，但尚未做硬杀复测。复测方法：起服务器、跑 `verify:smoke`、强杀 `next dev` 子进程、再查 `papers` 行数。
+
+## 验证
+
+七个脚本都可重复执行，退出码 0 表示全部通过。
+
+```bash
+npm run verify:smoke          # 63 项，需要开发服务器在运行
+npm run verify:notify         # 27 项，回复与点赞通知、通知开关，需要开发服务器在运行
+npm run verify:search         # 24 项，远程论文检索与缓存，需要开发服务器 + 外网；被上游限流时退出码 2
+npm run verify:search-fallback # 5 项，缓存回退分支，约 13 分钟，按需运行
+npm run verify:search-ui      # 4 项，检索表单防抖与结果渲染，需要开发服务器 + 本机 Chrome/Edge
+npm run verify:github         # 14 项，GitHub 登录接线与首登昵称规则；无凭据时 9 项通过并退出码 2（表示待定）
+npm run verify:github-schema  # 6 项，OAuth 首登要写的表结构；需要先停掉开发服务器
+npm run verify:anchor         # 12 项，独立运行，读取 storage/pdfs 里最新的 PDF
+npm run verify:reader         # 15 项，需要开发服务器 + 本机 Chrome/Edge
+npm run verify:settings       # 27 项，个人资料、密码、隐私设置与评论署名联动，需要开发服务器
+npm run verify:theme          # 8 项，三态主题与深色令牌，需要开发服务器 + 本机 Chrome/Edge
+npm run typecheck             # tsc --noEmit
+```
+
+`verify:github-schema` 直接打开 PGlite，而 PGlite 同一时刻只允许一个进程，所以它必须在开发服务器停止时运行；检测到 3100 端口有监听时它会以退出码 2 说明原因并退出。它在一个事务里插入、断言、回滚，因此不留任何数据。
+
+| 脚本 | 覆盖 |
+| --- | --- |
+| `verify:smoke` | 登录注册、论文导入、PDF Range 读取、阅读进度、收藏、发布定位评论、锚点字段落库与读回、点赞、回复、举报、管理员删除、越权删除被拒、敏感词、空内容、非法锚点、限流、删除自己的评论、匿名写入被拒、SSE 在线人数与新评论推送、`/me` `/u/[name]` `/admin` `/legal/takedown` 的访问控制、举报处理、隐藏/恢复评论、禁言/解除禁言、论文下架与恢复、Florence 与 α 两个具名管理员的后台权限 |
+| `verify:notify` | 回复通知与点赞通知：他人回复后被回复者收到未读通知、未读数增加、通知含回复者与论文页码、自己回复自己不产生通知、站点头部未读角标、`/me` 通知分页、不能标记他人的通知、按 id 只标一条、全部已读后归零、匿名访问被拒；点赞通知默认开启、点赞产生通知、重复点赞不堆积、点赞自己不通知、可关闭与重新开启、取消点赞撤回通知、非法设置值被拒、通知页渲染开关 |
+| `verify:search` | 远程检索：空关键词拒绝、按标题/作者/arXiv ID/DOI 检索、结果字段完整性、在库标记、从结果进入详情页、排序单调性、非法排序回退、按出版商筛选收窄命中数、未知来源回退；缓存：重复检索命中缓存、缓存带时间戳且不算失败；来源与可用性：结果卡片标注 arXiv/DOI 与「有公开 PDF / 仅元数据」、提供来源网站链接；论文获取模型：没有公开 PDF 的 DOI 仍能保存元数据记录、响应把元数据与 PDF 状态分开、失败原因入库、详情页给出原因与重试入口、无缓存副本时阅读器页说明原因而不是假装可读、重试接口从已存元数据重建候选且失败原因保留 |
+| `verify:search-fallback` | 缓存回退分支（约 13 分钟，按需运行）：标识符检索写入缓存、重复检索命中缓存、等待超过新鲜期、用互不相同且立刻 404 的 DOI 打满自身限流、再请求已缓存的关键词并断言返回缓存结果且标记 `stale` 与失败原因。单独成脚本的原因：该分支要求「同一关键词先成功缓存、缓存过期、之后又打不到上游」，用真实上游限流做触发器时时间点不可控 |
+| `verify:search-ui` | 真实浏览器：在远程模式下逐字快速输入 10 个字符，断言只落地 1 至 2 次检索跳转且最后一次带上完整关键词（防抖生效）；结果区渲染出论文或可理解的空状态；用键盘清空关键词后回到本地论文库视图 |
+| `verify:github` | GitHub 登录接线与首登昵称规则：昵称未被占用时保持原样、被占用时自动加后缀、为空时回落默认名、长度截断、候选耗尽时仍返回可用昵称、无邮箱时回落 noreply；密码登录仍注册、凭据存在时注册 GitHub provider 并显示按钮、发起登录跳转到 GitHub 授权页、带 client_id、回调指向本应用、使用 PKCE 并下发 CSRF 与 PKCE cookie；凭据缺失时断言 GitHub 被正确关闭并以退出码 2 报告 AUTH-008 待定。**不含** OAuth 回调、token 交换与首登建号，那需要真实 GitHub 账号与浏览器 |
+| `verify:github-schema` | OAuth 首次登录要写的表结构：可以创建没有本地密码的账号、可以把 GitHub 身份写入 `accounts`、同一 GitHub 身份不能被重复绑定、同名账号被拒绝、删除账号会级联删除绑定、检查过程不留下数据。需要先停开发服务器，全程事务回滚 |
+| `verify:anchor` | 用真实 PDF（Attention Is All You Need 第 4 页的 175 个文本项）验证引用定位，并验证**重新分块、大小写变化、空格变化、连字符换行**后仍能定位；同一句出现两次时用前后文选中正确的一处 |
+| `verify:reader` | 真实浏览器：登录后打开阅读器，确认画布与文本层渲染、在文本层建立选区并转成锚点草稿、发布评论、服务端保存引用与前后文，**刷新后位置标记偏差 0.0px**、**缩放到 160% 后标记仍跟随文本**、无前端异常 |
+| `verify:settings` | `/settings/profile`、`/settings/account`、`/settings/privacy` 三个页面可访问且未登录被重定向；昵称、头像、简介保存后刷新仍在；占用他人昵称返回 409、过短昵称 400、非 http 头像地址 400；三个隐私开关保存后刷新生效；默认匿名设置使新评论的署名在接口响应里就是 `null` 且 `isAnonymous` 为真；关闭弹幕后新评论 `visibleInDanmaku` 为假；关闭主页评论后公开主页不列评论并给出说明；显式取消匿名时按公开昵称署名；密码修改的三种结果（当前密码错误 403、新密码过短 400、正确 200）与用新密码重新登录；结束时还原资料、隐私设置与密码 |
+| `verify:theme` | 真实浏览器：设置页出现三态主题控件；浅色与深色下 `<html data-theme>`、页面背景与文字颜色、卡片表面色实际互换且深色卡片不是白底；刷新后仍保持已选主题；模拟系统深色时「跟随系统」解析为深色、系统改为浅色后无需改设置即跟随；论文库页沿用同一主题。截图输出到 `.verify/screenshots/` |
+
+`verify:search` 与 `verify:smoke` 分开，原因是每次检索会向上游 OpenAlex 发两个请求，而 OpenAlex 按 IP 限流（实测会回 `Retry-After: 24511`，约 6.8 小时）。把它放进主基线会让基线依赖一个有速率限制的外部服务。脚本内两次检索之间默认间隔 1200ms，可用 `SEARCH_GAP_MS` 调大；上游不可用时退出码 2，表示结论待定而不是代码回归。接口区分三类失败：`UPSTREAM_RATE_LIMITED`（上游限流）、`UPSTREAM_UNAVAILABLE`（上游故障或超时）、`SEARCH_RATE_LIMITED`（本项目的限流，回 429 并带 `Retry-After`），三者都会在有缓存时回退展示缓存结果并在响应里标记 `stale`。
+
+`verify:reader` 用 `puppeteer-core` 驱动本机已安装的 Chrome 或 Edge，不下载浏览器。换路径用 `CHROME_PATH`。
+
+**已修复的不稳定**：`verify:reader` 的「缩放后位置标记跟随文本重新定位」曾间歇失败（固定偏差 54.6px）。原因是脚本在 PDF 按新比例重排完成前就取样，`expectedZoom` 用的是未缩放高度；产品最终状态一直是正确的。脚本已改为等画布尺寸稳定后再取样，连跑 5 次偏差均为 0.0px。详见 [docs/04-worklog.md](docs/04-worklog.md) 第 2.1 节 R1。
+
+**脚本之间有配额冲突**：`verify:smoke`、`verify:notify`、`verify:reader` 都会发布评论，而应用的限流是每账号 60 秒 5 条。`verify:smoke` 自己就会把 reader 的配额用满（它有一条专门测限流的检查），所以这几个脚本不能在 60 秒内连跑。触发时它们打印说明并以退出码 2 结束，表示结论待定而不是回归。
+
+冒烟测试默认导入 arXiv `1706.03762`。换一篇用 `SMOKE_IDENTIFIER` 覆盖。
+
+## 目录
+
+```
+src/app/                页面与 API 路由
+src/app/read/[id]/      阅读器页
+src/app/admin/          管理后台
+src/components/reader/  PDF 阅读器、评论卡片
+src/components/admin/   后台操作按钮
+src/lib/anchor.ts       位置锚点：归一化、引用匹配、前后文提取
+src/lib/realtime.ts     SSE 扇出与在线阅读人数
+src/lib/comments/       评论查询、限流、敏感词、计数广播
+src/lib/papers/         OpenAlex 元数据、导入与 PDF 下载、查询
+src/lib/admin/          举报队列、用户、论文、统计
+src/db/                 Drizzle schema 与数据库连接
+drizzle/                手写 SQL 迁移，由 scripts/db-migrate.mjs 应用
+scripts/                迁移、种子、重置、三个验证脚本
+storage/pdfs/           缓存的 PDF 文件
+../happypaper-data/     PGlite 数据目录（在仓库之外）
+```
+
+## 读者界面
+
+阅读器把三种展示形态放在同一屏：
+
+| 形态 | 位置 | 行为 |
+| --- | --- | --- |
+| 弹幕浮层 | 页面顶部 | 当前页评论从右向左飘过，可在工具栏关闭并调节密度 |
+| 位置标记 | 页面右缘 | 按锚点 y 坐标排列，点击跳到该评论并高亮对应位置 |
+| 评论侧栏 | 右侧 | 当前页 ±1 页的全部评论与回复，含点赞/回复/举报/删除 |
+
+发布时选中文字即绑定到句子；未选中时按钮会把评论绑定到当前页面位置。弹幕来源可选「立即显示」或「按阅读位置显示」：前者进入该页即飘过，后者随阅读位置到达后才进入弹幕层。
+
+## 已实现
+
+- 邮箱密码注册与登录（Auth.js v5，JWT 会话）
+- GitHub 登录接线：设置 `AUTH_GITHUB_ID` 与 `AUTH_GITHUB_SECRET` 后注册 GitHub provider 并在登录页显示按钮，首次登录自动建账号，昵称取自 GitHub 且重名时自动加后缀；未设置时该入口完全关闭。**OAuth 握手尚未用真实凭据验证过**
+- 远程论文搜索：首页与 `/papers` 可切换「本地论文库 / 远程搜索」，按标题、作者、arXiv ID 或 DOI 检索 OpenAlex，排序可选相关度、引用数、发表时间；结果显示元数据、被引数与 PDF 可用状态，已入库的标记出来，可直接导入并进入详情页
+- 本地论文库搜索与远程搜索共用一个入口，切换方式为表单里的来源选择
+- 按 arXiv ID 或 DOI 导入论文：OpenAlex 元数据 + 开放获取 PDF 缓存到本机
+- PDF 上传，默认私有，转公开需确认分发权利
+- 论文列表、关键词搜索、标签筛选、论文详情页、收藏
+- PDF 在线阅读器：翻页、缩放、适应宽度、阅读进度保存与恢复
+- 文本层选区采集：页码 + 页内归一化坐标 + 引用文本 + 前后文 + 字符区间
+- 定位恢复：引用匹配优先，失败回退页内坐标
+- 评论发布、点赞、回复、举报、删除自己的
+- 回复通知：有人回复你的评论时写入站内通知，站点头部「通知」显示未读角标，`/me?tab=notifications` 查看并可全部标为已读
+- 点赞通知：他人点赞你的评论时写入通知，默认开启，可在 `/me?tab=notifications` 关闭；取消点赞会撤回对应通知，重复点赞不会堆积
+- 筛选（全部/疑问/解释/方法/结果）与排序（时间/热度）
+- 60 秒 5 条限流、敏感词过滤、禁言
+- SSE 实时推送新评论与在线阅读人数
+- 用户主页 `/u/[name]`、我的评论/收藏/阅读记录 `/me`
+- 管理后台 `/admin`：举报队列、内容审核、论文与版权、用户
+- 侵权投诉页 `/legal/takedown`
+
+## 已知限制
+
+- SSE 与在线阅读人数保存在单进程内存里，多实例部署需要加一层共享总线。
+- 实时推送只在同一进程内扇出。
+- 扫描版 PDF 无文本层时只能按页面位置定位，界面会标注。

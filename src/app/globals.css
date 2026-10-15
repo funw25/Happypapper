@@ -1,0 +1,382 @@
+@import "tailwindcss";
+
+/*
+ * HappyPaper design tokens (docs/03-requirements.md 3.2).
+ *
+ * Every colour a component needs is declared here once per theme. Components
+ * reference the tokens through Tailwind arbitrary values, for example
+ * `bg-[var(--paper-surface)]`, so adding a theme means adding one block below.
+ *
+ * Theme resolution: the inline script in `src/app/layout.tsx` sets
+ * `data-theme="light|dark"` on <html> before first paint. `:root` holds the
+ * light palette; `[data-theme="dark"]` overrides it. A media-query fallback
+ * covers the no-JavaScript case.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* surfaces */
+  --paper-bg: #f7f6f3;
+  --paper-surface: #ffffff;
+  --paper-surface-muted: #f1efea;
+  --paper-reader-bg: #e8e5df;
+  --paper-overlay: rgba(255, 255, 255, 0.9);
+
+  /* text */
+  --paper-fg: #1c1b19;
+  --paper-muted: #6b6862;
+
+  /* lines and accents */
+  --paper-line: #d9d5cd;
+  --paper-accent: #2f6f4e;
+  --paper-accent-fg: #ffffff;
+  --paper-accent-soft: rgba(47, 111, 78, 0.12);
+  --paper-success: #2f6f4e;
+  --paper-warning: #9a6700;
+  --paper-danger: #b42318;
+
+  /* danmaku bubble */
+  --paper-danmaku-bg: rgba(255, 255, 255, 0.86);
+
+  /* layout */
+  --hp-nav-height: 3.5rem;
+  --hp-toolbar-height: 2.75rem;
+  --hp-content-width: 72rem;
+  --hp-reading-width: 48rem;
+  --hp-reader-panel-width: 22rem;
+
+  /* spacing scale */
+  --hp-space-1: 0.25rem;
+  --hp-space-2: 0.5rem;
+  --hp-space-3: 0.75rem;
+  --hp-space-4: 1rem;
+  --hp-space-6: 1.5rem;
+  --hp-space-8: 2rem;
+
+  /* radius */
+  --hp-radius-sm: 6px;
+  --hp-radius: 10px;
+  --hp-radius-lg: 14px;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --paper-bg: #14161a;
+  --paper-surface: #1b1e24;
+  --paper-surface-muted: #23272e;
+  --paper-reader-bg: #0f1114;
+  --paper-overlay: rgba(20, 22, 26, 0.9);
+
+  --paper-fg: #e9e7e2;
+  --paper-muted: #a5a19a;
+
+  --paper-line: #33383f;
+  --paper-accent: #6cc79a;
+  --paper-accent-fg: #0d1512;
+  --paper-accent-soft: rgba(108, 199, 154, 0.16);
+  --paper-success: #6cc79a;
+  --paper-warning: #e0b341;
+  --paper-danger: #f0837a;
+
+  --paper-danmaku-bg: rgba(27, 30, 36, 0.88);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+
+    --paper-bg: #14161a;
+    --paper-surface: #1b1e24;
+    --paper-surface-muted: #23272e;
+    --paper-reader-bg: #0f1114;
+    --paper-overlay: rgba(20, 22, 26, 0.9);
+
+    --paper-fg: #e9e7e2;
+    --paper-muted: #a5a19a;
+
+    --paper-line: #33383f;
+    --paper-accent: #6cc79a;
+    --paper-accent-fg: #0d1512;
+    --paper-accent-soft: rgba(108, 199, 154, 0.16);
+    --paper-success: #6cc79a;
+    --paper-warning: #e0b341;
+    --paper-danger: #f0837a;
+
+    --paper-danmaku-bg: rgba(27, 30, 36, 0.88);
+  }
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--paper-bg);
+  color: var(--paper-fg);
+  font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+/* ---- typography ------------------------------------------------------- */
+
+.hp-page-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.hp-section-title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.hp-paper-title {
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.hp-muted {
+  color: var(--paper-muted);
+}
+
+.hp-meta {
+  font-size: 0.75rem;
+  color: var(--paper-muted);
+}
+
+.hp-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.hp-hint {
+  font-size: 0.75rem;
+  color: var(--paper-muted);
+}
+
+.hp-error {
+  font-size: 0.875rem;
+  color: var(--paper-danger);
+}
+
+.hp-success {
+  font-size: 0.875rem;
+  color: var(--paper-success);
+}
+
+/* ---- layout ----------------------------------------------------------- */
+
+.hp-page {
+  margin: 0 auto;
+  max-width: var(--hp-content-width);
+  padding: var(--hp-space-8) var(--hp-space-4);
+}
+
+.hp-page-narrow {
+  margin: 0 auto;
+  max-width: var(--hp-reading-width);
+  padding: var(--hp-space-8) var(--hp-space-4);
+}
+
+.hp-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-4);
+}
+
+.hp-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hp-space-1);
+}
+
+/* ---- components ------------------------------------------------------- */
+
+.hp-card {
+  border: 1px solid var(--paper-line);
+  background: var(--paper-surface);
+  border-radius: var(--hp-radius);
+}
+
+.hp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 8px;
+  border: 1px solid var(--paper-line);
+  background: var(--paper-surface);
+  color: var(--paper-fg);
+  padding: 6px 12px;
+  font-size: 14px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.hp-btn:hover {
+  border-color: var(--paper-accent);
+  color: var(--paper-accent);
+}
+
+.hp-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.hp-btn-primary {
+  background: var(--paper-accent);
+  border-color: var(--paper-accent);
+  color: var(--paper-accent-fg);
+}
+
+.hp-btn-primary:hover {
+  color: var(--paper-accent-fg);
+  opacity: 0.9;
+}
+
+.hp-btn-danger {
+  border-color: var(--paper-danger);
+  color: var(--paper-danger);
+}
+
+.hp-btn-danger:hover {
+  border-color: var(--paper-danger);
+  color: var(--paper-danger);
+}
+
+.hp-input {
+  width: 100%;
+  border: 1px solid var(--paper-line);
+  border-radius: 8px;
+  background: var(--paper-surface);
+  color: var(--paper-fg);
+  padding: 8px 10px;
+  font-size: 14px;
+  outline: none;
+}
+
+.hp-input:focus {
+  border-color: var(--paper-accent);
+  box-shadow: 0 0 0 3px var(--paper-accent-soft);
+}
+
+.hp-input::placeholder {
+  color: var(--paper-muted);
+}
+
+.hp-tag {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--paper-line);
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: 12px;
+  color: var(--paper-muted);
+}
+
+.hp-notice {
+  border: 1px solid var(--paper-line);
+  border-left: 3px solid var(--paper-accent);
+  border-radius: var(--hp-radius-sm);
+  background: var(--paper-surface-muted);
+  padding: var(--hp-space-3) var(--hp-space-4);
+  font-size: 0.875rem;
+}
+
+/* settings navigation (shared by every /settings page) */
+.hp-settings-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hp-space-1);
+  border-bottom: 1px solid var(--paper-line);
+}
+
+.hp-settings-nav a {
+  padding: var(--hp-space-2) var(--hp-space-3);
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  font-size: 0.875rem;
+  color: var(--paper-muted);
+}
+
+.hp-settings-nav a[data-active="true"] {
+  border-bottom-color: var(--paper-accent);
+  color: var(--paper-accent);
+}
+
+/* theme switch */
+.hp-theme-switch {
+  display: inline-flex;
+  border: 1px solid var(--paper-line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.hp-theme-switch button {
+  border: 0;
+  background: transparent;
+  color: var(--paper-muted);
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.hp-theme-switch button[aria-pressed="true"] {
+  background: var(--paper-accent-soft);
+  color: var(--paper-accent);
+}
+
+/* PDF.js text layer: invisible text positioned over the canvas so the reader
+   can select and anchor to real characters. */
+.hp-text-layer span {
+  color: transparent;
+}
+
+.hp-text-layer ::selection {
+  background: var(--paper-accent-soft);
+}
+
+@keyframes hp-danmaku-drift {
+  0% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+  6% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(calc(-100vw - 100%));
+    opacity: 0;
+  }
+}
+
+.hp-danmaku {
+  position: absolute;
+  left: 100%;
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 10px;
+  border: 1px solid var(--paper-line);
+  border-radius: 999px;
+  background: var(--paper-danmaku-bg);
+  color: var(--paper-fg);
+  opacity: 0;
+  animation: hp-danmaku-drift 12s linear forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hp-danmaku {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+  }
+}
