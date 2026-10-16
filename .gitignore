@@ -4,6 +4,7 @@ node_modules
 storage/pdfs/*
 !storage/pdfs/.gitkeep
 .env.local
+.env.production.local
 next-env.d.ts
 *.tsbuildinfo
 *.log

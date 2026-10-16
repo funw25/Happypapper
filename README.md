@@ -166,6 +166,26 @@ npm run verify:github-flow
 
 ## 生产验证与备份
 
+**生产环境配置（`\.env.production.local`）。** `next build` / `next start` 会自动加载该文件（已被 `.gitignore` 忽略）。本项目当前接的是 Supabase，三处与服务商有关的细节值得记下来：
+
+```bash
+# 数据库：直连主机 db.<ref>.supabase.co 只有 AAAA 记录，本机与多数容器没有 IPv6 出口，
+# 因此必须用 Session pooler（IPv4），用户名是 postgres.<项目 ref>。
+DATABASE_URL=postgresql://postgres.<ref>:<密码>@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres
+# TLS：连接串里的 sslmode 不生效，必须显式给 CA。Supabase 用自家根证书签发，
+# 仓库里带了 certs/supabase-prod-ca-2021.crt（也可从控制台下载 prod-ca-2021.crt 覆盖）。
+DATABASE_SSL_CA=./certs/supabase-prod-ca-2021.crt
+# 对象存储：Supabase Storage 的 S3 兼容端点，需要 path-style（设了 S3_ENDPOINT 时自动开启）。
+STORAGE_DRIVER=s3
+S3_BUCKET=happypaper-pdfs
+S3_ENDPOINT=https://<ref>.storage.supabase.co/storage/v1/s3
+S3_REGION=ap-northeast-2
+S3_ACCESS_KEY_ID=...
+S3_SECRET_ACCESS_KEY=...
+```
+
+TLS 的三个环境变量：`DATABASE_SSL_CA` 指定 CA 文件（开启校验）、`DATABASE_SSL_NO_VERIFY=1` 只加密不校验、都不设则不加密（数据库主机不是本机时会打印一行提示）。`pg_stat_ssl.ssl` 在 Supabase 上恒为 `false`——那是池化服务到 Postgres 的内部一段，判断客户端这一段要看连接 socket 是否 `TLSSocket`。
+
 **生产构建与启动（四条命令，按顺序）。** 生产模式与开发模式的行为不是一回事，2026-10-16 就是在这里抓到一次只在 `npm start` 下出现的崩溃。
 
 ```bash
@@ -176,9 +196,16 @@ npm run build          # 期望：退出码 0，0 条 tracing 警告，TypeScrip
 npm start              # http://localhost:3100
 # 4. 另一终端跑验证
 npm run verify:smoke   # 63/63
-npm run verify:settings # 27/27
+npm run verify:settings # 32/32
 npm run verify:load    # 160 个请求，无 5xx
+EXPECT_STORAGE_DRIVER=s3 npm run verify:storage   # 10/10（生产模式不写开发日志，跳过驱动比对）
 ```
+
+**Windows 上重复构建会失败。** Turbopack 会为 `serverExternalPackages` 里的包在 `.next/node_modules` 下建 junction，下一次构建删不掉它，报 `EPERM: operation not permitted, unlink '...\.next\node_modules\@aws-sdk\client-s3-…'`。构建前删掉 `.next` 即可：`Remove-Item -Recurse -Force .next`。另外类型检查子进程在受限沙箱里可能报 `spawn EPERM`，用普通终端（非沙箱）执行即可。
+
+抓到的问题：开发服务器把 PGlite 实例缓存在模块作用域，生产分支没有缓存，于是**每次查询**都新建一个实例、重新打开 `pglite.data` 与数据目录，几十个请求后 `EMFILE: too many open files`，页面开始 500，并连带出现 `client reference manifest ... does not exist` 之类的次生错误。`verify:smoke` 单独跑不到那个请求量，所以加了 `verify:load` 作为回归闸门。构建产物里不再包含源码或 `storage/`（`src/lib/storage.ts` 的 `turbopackIgnore` 标注），`.next` 合计 81 MB、`.next/server` 21 MB。
+
+**2026-10-16 已在 Supabase 上跑通。** 迁移 10 条、`db:seed` 建 4 个账号；`npm start` 下 `verify:smoke` 63/63、`verify:settings` 32/32、`verify:storage` 10/10（启动日志确认 `driver=s3 bucket=happypaper-pdfs`，桶内确认有应用写入的对象）。验证用的测试数据随后已用 `db:reset` 清掉、桶已清空。
 
 抓到的问题：开发服务器把 PGlite 实例缓存在模块作用域，生产分支没有缓存，于是**每次查询**都新建一个实例、重新打开 `pglite.data` 与数据目录，几十个请求后 `EMFILE: too many open files`，页面开始 500，并连带出现 `client reference manifest ... does not exist` 之类的次生错误。`verify:smoke` 单独跑不到那个请求量，所以加了 `verify:load` 作为回归闸门。构建产物里不再包含源码或 `storage/`（`src/lib/storage.ts` 的 `turbopackIgnore` 标注），`.next` 合计 81 MB、`.next/server` 21 MB。
 

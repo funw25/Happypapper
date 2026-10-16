@@ -22,7 +22,7 @@
 | `npm run verify:github-schema` | 6/6（需先停开发服务器；全程事务回滚，不留数据） |
 | `npm run verify:account` | 31/31（第 13 轮新增，未配置 OAuth 时）；36/36（同一脚本在临时假凭据下运行，额外覆盖绑定授权的跳转与 state 校验） |
 | `npm run verify:load` | 160 个请求 0 个 5xx、无连接错误（第 14 轮新增，需对生产服务器运行；p50 18ms、p95 89ms） |
-| `npm run verify:storage` | 11/11（第 16 轮新增；local 与 s3 两个驱动各跑一次，含完整内容与 Range 区间的逐字节比对） |
+| `npm run verify:storage` | 11/11（第 16 轮新增；local 与 s3 两个驱动各跑一次，含完整内容与 Range 区间的逐字节比对）；生产模式 10/10（不写开发日志，跳过驱动比对） |
 | `npm run verify:github-flow` | 16/16（第 17 轮新增；需假提供方，PostgreSQL 与 PGlite 各跑一遍） |
 | `npm run verify:anchor` | 12/12 |
 | `npm run verify:reader` | 15/15（R1 已修复，连跑 5 次偏差 0.0px） |
@@ -103,6 +103,35 @@ B8（管理员种子缺少 Florence 与 α）已于第 2 轮完成，B6（远程
 ---
 
 ## 三、工作日志
+
+### 2026-10-16 第 20 轮：接上 Supabase（PostgreSQL + 对象存储）并在生产模式验证
+
+**结论：生产形态已经在用户的真实 Supabase 项目上跑通。** 迁移 10 条、种子 4 个账号；`npm start` 下 `verify:smoke` 63/63、`verify:settings` 32/32、`verify:storage` 10/10；应用启动日志确认 `driver=s3 bucket=happypaper-pdfs`，桶内确认有应用写入的对象。验证产生的数据已清除，数据库回到「10 条迁移 + 4 个账号 + 0 篇论文」，桶已空。
+
+用户提供：Supabase 数据库连接串、Storage 桶 happypaper-pdfs、S3 端点与密钥。
+
+四处由实测决定的实现与配置：
+
+1. **直连主机不可用，必须走 Session pooler。** db.<ref>.supabase.co 只有 AAAA 记录（本机与多数容器没有 IPv6 出口），Node 直接报 getaddrinfo ENOTFOUND。改成 aws-0-ap-northeast-2.pooler.supabase.com:5432 可用，用户名是 postgres.<项目 ref>。
+2. **连接串里的 SSL 参数不生效，TLS 必须显式配置。** sslmode=require 报 self-signed certificate in certificate chain：Supabase 的池化端点用自家根证书（Supabase Root 2021 CA）签发，Node 的信任库里没有它。已从真实握手导出该链到 certs/supabase-prod-ca-2021.crt，连接改为 ssl: { ca, rejectUnauthorized: true }。判断加密与否不能看 pg_stat_ssl.ssl（那是池化服务到 Postgres 的内部一段，恒为 false），要看客户端 socket 是否为 TLSSocket。
+3. **数据库 TLS 的三个环境变量**（DATABASE_SSL_CA 校验、DATABASE_SSL_NO_VERIFY=1 只加密、都不设则明文并在远程主机时打印提示）同时接进了应用（src/db/index.ts）与脚本（scripts/lib/db-client.mjs），两边共用同一套规则，避免出现「应用加密、迁移脚本明文」这种裂缝。
+4. **生产模式不写开发日志**，verify:storage 原来靠开发日志判断驱动，在生产下必然报 driver=unknown。改为：读不到日志时打印说明并跳过驱动比对，功能项照跑（驱动取值由启动终端的 stdout 记录）。
+
+Windows 上的构建坑：Turbopack 会为 serverExternalPackages 的包在 .next/node_modules 下建 junction，再次构建删不掉它，报 EPERM unlink '@aws-sdk/client-s3-…'。构建前删掉 .next 即可。另外 next build 的类型检查子进程在受限沙箱下报 spawn EPERM，需在普通终端执行。顺带修掉 src/lib/storage.ts 启动日志里 resolve(process.env.STORAGE_DIR …) 的 tracing 警告（补 turbopackIgnore），构建恢复 0 警告。
+
+**验证证据。**
+
+| 项 | 结果 |
+| --- | --- |
+| 迁移与种子（Supabase） | 10 条迁移，users=4（admin / reader / Florence / α），banned words 5 |
+| 客户端 TLS | TLSSocket，用固定 CA 校验；数据库版本 PostgreSQL 17.11 |
+| npm start + verify:smoke | 63/63 |
+| npm start + verify:settings | 32/32 |
+| npm start + verify:storage（s3） | 10/10（跳过驱动比对，见上） |
+| 存储落桶 | 启动日志 [storage] driver=s3 bucket=happypaper-pdfs；桶内确认出现应用写入的对象 |
+| 收尾 | db:reset 后 users=4 / papers=0 / 迁移 10；桶内对象已清空 |
+
+**本轮遗留。** 生产环境的定时备份尚未配置（用户侧任务，用 pg_dump 加桶侧版本控制/生命周期）；AUTH_SECRET 已生成但 NEXTAUTH_URL 与 APP_URL 仍指 localhost，上线换域名后需同步更新 GitHub 回调地址；真实读者的测试尚未开始。
 
 ### 2026-10-16 第 19 轮：头像改为「昵称前两个字符 + 可选配色」
 

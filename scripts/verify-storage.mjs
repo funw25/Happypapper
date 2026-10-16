@@ -132,8 +132,20 @@ for (let attempt = 0; driver === null && attempt < 20; attempt++) {
   driver = lastDriverFromLog();
 }
 
-check("能从服务器日志确认当前存储驱动", driver !== null, `driver=${driver ?? "unknown"}`);
-if (driver !== EXPECTED_DRIVER) {
+/**
+ * 生产模式（next start）不写开发日志，日志里读不到驱动。这时不判定驱动，改为打印
+ * 说明并继续跑功能检查：驱动取值由启动它的那台终端的 stdout 记录，功能项照样能证明
+ * 写入与读取是否正常。开发模式下仍然严格比对。
+ */
+const PRODUCTION = process.env.NODE_ENV === "production" || process.env.STORAGE_DRIVER_SOURCE === "stdout";
+if (driver === null && PRODUCTION) {
+  console.log(
+    "（说明）读不到开发日志：生产模式把启动日志写在 stdout，驱动取值请在启动终端确认；本次跳过驱动比对，继续跑功能检查。",
+  );
+} else {
+  check("能从服务器日志确认当前存储驱动", driver !== null, `driver=${driver ?? "unknown"}`);
+}
+if (driver !== null && driver !== EXPECTED_DRIVER) {
   console.error(
     `\n服务器当前用的是 ${driver ?? "未知"} 驱动，而这次要验证 ${EXPECTED_DRIVER}。` +
       `${EXPECTED_DRIVER === "s3" ? "请用 STORAGE_DRIVER=s3 与 S3_* 环境变量重启服务器。" : ""}`,

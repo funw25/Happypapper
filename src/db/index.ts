@@ -1,9 +1,9 @@
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
 import { drizzle as drizzleNodePostgres } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import { Pool, type PoolConfig } from "pg";
 import { PgDatabase } from "drizzle-orm/pg-core";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import * as schema from "./schema";
 
 /**
@@ -20,10 +20,45 @@ import * as schema from "./schema";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = PgDatabase<any, typeof schema>;
 
+/**
+ * TLS 选项。连接串里的 `sslmode` / `sslrootcert` 会被驱动忽略：实测把
+ * `sslmode=verify-full` 写进 URL，连接照样是明文的（`pg_stat_ssl.ssl = false`），
+ * 因此必须显式传 `ssl`。
+ *
+ * - `DATABASE_SSL_CA`：CA 文件路径，开启校验。托管服务商常用私有根证书，例如
+ *   Supabase 的 Supabase Root 2021 CA（仓库里带了一份 `certs/supabase-prod-ca-2021.crt`）。
+ * - `DATABASE_SSL_NO_VERIFY=1`：加密但不校验证书，用于无法固定 CA 的环境。
+ * - 都不设：不加密；主机不是本机时打印一行提示。
+ */
+function databaseSsl(): PoolConfig["ssl"] {
+  const ca = process.env.DATABASE_SSL_CA?.trim();
+  const noVerify = /^(1|true|yes)$/i.test(process.env.DATABASE_SSL_NO_VERIFY ?? "");
+  if (ca) return { ca: readFileSync(ca, "utf8"), rejectUnauthorized: !noVerify };
+  if (noVerify) return { rejectUnauthorized: false };
+  return undefined;
+}
+
+function safeHost(url: string): string | null {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+}
+
 function createDb(): Db {
   const url = process.env.DATABASE_URL?.trim();
   if (url) {
-    const pool = new Pool({ connectionString: url, max: 10 });
+    const ssl = databaseSsl();
+    if (!ssl) {
+      const host = safeHost(url);
+      if (host && host !== "localhost" && host !== "127.0.0.1" && host !== "::1") {
+        console.warn(
+          `[db] ${host} 的连接未加密：设置 DATABASE_SSL_CA=./certs/… 或 DATABASE_SSL_NO_VERIFY=1。`,
+        );
+      }
+    }
+    const pool = new Pool({ connectionString: url, max: 10, ssl });
     return drizzleNodePostgres(pool, { schema });
   }
 

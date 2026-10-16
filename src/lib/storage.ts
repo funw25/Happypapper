@@ -205,7 +205,7 @@ if (!globalForStorage.__hpStorage) {
     console.log(
       driver === "s3"
         ? `[storage] driver=s3 bucket=${process.env.S3_BUCKET} endpoint=${process.env.S3_ENDPOINT ?? "aws"}`
-        : `[storage] driver=local dir=${resolve(process.env.STORAGE_DIR ?? "./storage/pdfs")}`,
+        : `[storage] driver=local dir=${resolve(/* turbopackIgnore: true */ process.env.STORAGE_DIR ?? "./storage/pdfs")}`,
     );
   }
 }
