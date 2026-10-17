@@ -251,7 +251,7 @@ storage/pdfs/           缓存的 PDF 文件
 ## 已实现
 
 - 邮箱密码注册与登录（Auth.js v5，JWT 会话）
-- GitHub 登录接线：设置 `AUTH_GITHUB_ID` 与 `AUTH_GITHUB_SECRET` 后注册 GitHub provider 并在登录页显示按钮，首次登录自动建账号，昵称取自 GitHub 且重名时自动加后缀；未设置时该入口完全关闭。**OAuth 握手尚未用真实凭据验证过**
+- GitHub 登录：设置 `AUTH_GITHUB_ID` 与 `AUTH_GITHUB_SECRET` 后注册 GitHub provider 并在登录页显示按钮，首次登录自动建账号，昵称取自 GitHub 且重名时自动加后缀；未设置时该入口完全关闭。握手之后的逻辑（首登建号、昵称去重、邮箱回落、账号绑定、绑定后登录进同一账号、解绑保护）已用本地假提供方端到端验证（`verify:github-flow` 16/16），真实 GitHub 侧待凭据做一次冒烟
 - 远程论文搜索：首页与 `/papers` 可切换「本地论文库 / 远程搜索」，按标题、作者、arXiv ID 或 DOI 检索 OpenAlex，排序可选相关度、引用数、发表时间；结果显示元数据、被引数与 PDF 可用状态，已入库的标记出来，可直接导入并进入详情页
 - 本地论文库搜索与远程搜索共用一个入口，切换方式为表单里的来源选择
 - 按 arXiv ID 或 DOI 导入论文：OpenAlex 元数据 + 开放获取 PDF 缓存到本机
