@@ -18,15 +18,6 @@ npm run dev                    # http://localhost:3100
 
 打开 `http://localhost:3100`，用 `reader@happypaper.local` / `reader12345` 登录，进论文点「开始阅读」。
 
-本地账号：
-
-| 邮箱 | 密码 | 角色 |
-| --- | --- | --- |
-| admin@happypaper.local | admin12345 | 管理员 |
-| reader@happypaper.local | reader12345 | 普通用户 |
-| florence@happypaper.com | florence12345 | 管理员（Florence） |
-| alpha@happypaper.com | alpha12345 | 管理员（α） |
-
 ## 数据库后端
 
 后端由 `DATABASE_URL` 决定，schema、迁移文件与查询代码两边完全一样：
