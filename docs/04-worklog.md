@@ -7,11 +7,11 @@
 
 ## 一、当前状态
 
-证据基线为十一条命令，最近一次全绿执行于 2026-10-15：
+证据基线为十五条命令，最近一次全绿执行于 2026-10-16：
 
 | 命令 | 结果 |
 | --- | --- |
-| `npm run build` | 退出码 0，0 条错误行，6 条 tracing 警告（沙箱内 type-check 子进程被拒，见下方环境依赖） |
+| `npm run build` | 退出码 0，0 条 tracing 警告（第 20 轮复测；沙箱内 type-check 子进程会被拒，需普通终端；Windows 上重复构建前先删 `.next`） |
 | `npm run typecheck` | 0 错误 |
 | `npm run verify:smoke` | 63/63 |
 | `npm run verify:notify` | 27/27 |
@@ -32,8 +32,8 @@
 | 项 | 值 |
 | --- | --- |
 | 代码 | `C:\Users\fnw\Desktop\happypaper`，git 仓库已建立，远程 `https://github.com/funw25/Happypapper`（公开），主分支 `main`，首个提交 `5766de6` 含 123 个受管文件 |
-| 数据库 | PGlite，数据目录 `../happypaper-data/pgdata`（在仓库之外），迁移至 `0008_account_tokens.sql` |
-| PDF 存储 | `./storage/pdfs` |
+| 数据库 | 本地 PGlite，数据目录 `../happypaper-data/pgdata`（在仓库之外）；生产为 Supabase PostgreSQL 17.11（Session pooler + 固定 CA），迁移至 `0009_avatar_colors.sql` |
+| PDF 存储 | 本地 `./storage/pdfs`；生产为 Supabase Storage 桶 `happypaper-pdfs`（S3 兼容端点，ap-northeast-2） |
 | 开发服务器 | 运行中，`http://localhost:3100`（第 11 轮重启过一次，见 2.4 节） |
 | 本地账号 | `admin@happypaper.local` / `admin12345`（管理员）、`reader@happypaper.local` / `reader12345`（普通用户）、`florence@happypaper.com` / `florence12345`（管理员 Florence）、`alpha@happypaper.com` / `alpha12345`（管理员 α）、`smoke-*@happypaper.local` / `probe12345`（历史脚本注册的测试账号） |
 
@@ -49,8 +49,8 @@
 | --- | --- | --- | --- |
 | R1 | ~~`verify:reader` 间歇失败~~ **已于第 10 轮修复**。原因是脚本在 PDF 按新比例重排完成前取样，`expectedZoom` 用的是未缩放高度；产品最终状态一直是正确的 0.0px。修法是加「画布尺寸稳定」等待，连跑 5 次均 14/14、偏差 0.0px。详见工作日志第 10 轮 | 第 9 轮复现、第 10 轮修复 | 02-roadmap M3 的「缩放到 160% 后标记仍跟随文本」 |
 | R2 | **验证脚本之间存在发评论配额冲突**：`verify:smoke` 有一条测限流的检查，会用满 reader 账号 60 秒 5 条的配额，因此 smoke → notify → reader 不能在 60 秒内连跑。三个脚本现在都会把这种情况报成退出码 2，但基线仍需按 70 秒间隔执行 | 第 10 轮实测 | 应用自身的限流规则（`src/lib/comments/queries.ts`） |
-| B7 | GitHub 登录：**接线与表结构均已完成并验证**，OAuth 握手未验证。等待真实 `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` 才能验证回调、token 交换与首登建号 | `verify:github` 14/14（假凭据）、`verify:github-schema` 6/6 | AUTH-008 至 AUTH-010（第 117–120 行） |
-| B7 余项 | AUTH-011 至 AUTH-013 已于第 13 轮实现：`/settings/account` 的绑定与解绑、解绑保护、邮箱验证与邮箱修改、密码找回。**真实 OAuth 握手仍未验证**：绑定发起与回调的接线在临时假凭据下通过（36/36），但 token 交换、读取 GitHub 身份、首登建号需要真实凭据与浏览器 | 第 13 轮 | AUTH-011 至 AUTH-013（第 121–122 行）、第 255 行 |
+| B7 | GitHub 登录：**握手之后的全部逻辑已于第 17 轮在本地假提供方上端到端验证**（首登建号、昵称去重、邮箱回落）。仅剩真实 GitHub 侧（授权页、回调注册、真实 token 响应）待用户凭据 | `verify:github` 14/14、`verify:github-flow` 16/16、`verify:github-schema` 6/6 | AUTH-008 至 AUTH-010（第 117–120 行） |
+| B7 余项 | AUTH-011 至 AUTH-013 已于第 13 轮实现、第 17 轮端到端验证：绑定、绑定后登录进同一账号、同一身份不可二次绑定、解绑保护（唯一登录方式时 409）、正常解绑。**仅剩真实 GitHub 凭据下的冒烟** | `verify:account` 31/31、`verify:github-flow` 16/16 | AUTH-011 至 AUTH-013（第 121–122 行）、第 255 行 |
 | P1 | **个人资料、隐私与主题需求**（PROFILE-001 至 PROFILE-009、PRIVACY-001 至 PRIVACY-013、UI-001 至 UI-007）已于第 11 轮实现，第 18 轮做过头像上传、第 19 轮按用户指示改为「昵称前两个字符 + 可选配色」并撤掉上传；`verify:settings` 32/32、`verify:theme` 8/8 | 第 11、18 轮 | 03-requirements 第 126–185、81–99 行 |
 | P2 | **论文获取模型**（PAPER-002、PAPER-005、PAPER-006、PAPER-007 与第 28 行的「已找到元数据但没有可用 PDF」）已于第 12 轮实现：检索缓存与限流、元数据与 PDF 状态分离、无 PDF 也能入库并可重试、结果展示来源与可用性 | 第 12 轮 | 03-requirements 第 17–39 行 |
 | P3 | **账号闭环**（AUTH-006、AUTH-007、AUTH-011 至 AUTH-013、PROFILE-008）已于第 13 轮实现：一次性令牌、邮箱验证与邮箱修改、密码找回、GitHub 绑定与解绑保护 | 第 13 轮（`verify:account` 31/31，假凭据下 36/36） | 03-requirements 第 101–124、152 行 |

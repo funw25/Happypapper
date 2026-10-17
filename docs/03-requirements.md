@@ -261,17 +261,17 @@ updated_at
 
 ## 10. 验收标准
 
-- [ ] 用户可以邮箱注册、登录和退出
-- [ ] 用户可以用 GitHub 登录
-- [ ] Florence 和 α 账号拥有管理员权限
-- [ ] 管理员权限不能由普通用户通过修改请求参数获得
+- [x] 用户可以邮箱注册、登录和退出（`npm run verify:smoke`，63/63）
+- [x] 用户可以用 GitHub 登录（`npm run verify:github-flow` 16/16，本地假提供方；真实 GitHub 侧待用户凭据做一次冒烟）
+- [x] Florence 和 α 账号拥有管理员权限（种子脚本写入 `role=admin`，两个账号实测登录后 `/admin` 返回 200，2026-10-16）
+- [x] 管理员权限不能由普通用户通过修改请求参数获得（`verify:smoke`：普通用户访问管理接口与管理页被拒、非作者非管理员删除他人评论被拒）
 - [x] 用户可以编辑昵称、头像和个人简介（`npm run verify:settings`，第 11 轮）
 - [x] 用户可以修改邮箱并完成验证（`npm run verify:account`，第 13 轮）
 - [x] 用户可以设置默认匿名发布（`npm run verify:settings`，第 11 轮）
 - [x] 用户可以控制个人主页是否展示自己的评论（`npm run verify:settings`，第 11 轮）
 - [x] 用户可以控制评论是否进入弹幕流（`npm run verify:settings`，第 11 轮）
-- [ ] 删除评论后，普通用户无法看到该评论
-- [ ] 管理员仍能处理举报和审核记录
+- [x] 删除评论后，普通用户无法看到该评论（`verify:smoke`：侧栏不再出现、已删除的评论不会复活）
+- [x] 管理员仍能处理举报和审核记录（`verify:smoke`：举报他人评论、处理举报、隐藏与恢复评论）
 - [x] 浅色、深色和系统主题均可正常阅读（`npm run verify:theme`，第 11 轮）
 - [x] 设置保存后刷新和重新登录仍然生效（`npm run verify:settings`，第 11 轮）
 
