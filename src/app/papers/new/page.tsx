@@ -58,6 +58,7 @@ export default function NewPaperPage() {
     form.set("authors", authors);
     form.set("year", year);
     form.set("visibility", visibility);
+    if (visibility === "public" && rightsClaimed) form.set("rightsClaimed", "true");
 
     const response = await fetch("/api/papers", { method: "POST", body: form });
     const payload = await response.json().catch(() => ({}));

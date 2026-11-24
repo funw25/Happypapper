@@ -1,6 +1,16 @@
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { comments, notifications, papers, users } from "@/db/schema";
+import { readablePapers } from "@/lib/papers/access";
+
+function notificationVisibility(userId: string) {
+  return and(
+    eq(notifications.userId, userId),
+    eq(comments.paperId, notifications.paperId),
+    eq(comments.status, "visible"),
+    readablePapers(userId),
+  );
+}
 
 export type NotificationItem = {
   id: number;
@@ -134,7 +144,9 @@ export async function unreadNotificationCount(userId: string): Promise<number> {
   const [row] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(notifications)
-    .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
+    .innerJoin(comments, eq(comments.id, notifications.commentId))
+    .innerJoin(papers, eq(papers.id, notifications.paperId))
+    .where(and(notificationVisibility(userId), isNull(notifications.readAt)));
   return row?.count ?? 0;
 }
 
@@ -152,7 +164,7 @@ export async function listNotifications(
       page: comments.page,
       readAt: notifications.readAt,
       createdAt: notifications.createdAt,
-      actorName: users.name,
+      actorName: sql<string | null>`case when ${notifications.type} = 'reply' and ${comments.isAnonymous} then null else ${users.name} end`,
       paperTitle: papers.title,
       commentContent: comments.content,
     })
@@ -160,7 +172,7 @@ export async function listNotifications(
     .innerJoin(comments, eq(comments.id, notifications.commentId))
     .innerJoin(papers, eq(papers.id, notifications.paperId))
     .leftJoin(users, eq(users.id, notifications.actorId))
-    .where(eq(notifications.userId, userId))
+    .where(notificationVisibility(userId))
     .orderBy(desc(notifications.createdAt))
     .limit(limit)
     .offset(offset);
@@ -168,7 +180,9 @@ export async function listNotifications(
   const [total] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(notifications)
-    .where(eq(notifications.userId, userId));
+    .innerJoin(comments, eq(comments.id, notifications.commentId))
+    .innerJoin(papers, eq(papers.id, notifications.paperId))
+    .where(notificationVisibility(userId));
 
   return {
     items,

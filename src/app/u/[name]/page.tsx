@@ -32,7 +32,6 @@ export default async function UserPage({ params }: { params: Promise<{ name: str
             <h1 className="hp-page-title">{profile.name}</h1>
             <p className="hp-hint">
               {[
-                `声望 ${profile.reputation}`,
                 `${profile.commentCount} 条评论`,
                 `获赞 ${profile.receivedLikes}`,
                 profile.role === "admin" ? "管理员" : null,

@@ -21,7 +21,7 @@ export type CommentDTO = {
   likeCount: number;
   replyCount: number;
   createdAt: string;
-  userId: string | null;
+  viewer: { isMine: boolean; canEdit: boolean; canDelete: boolean };
   authorName: string | null;
   likedByMe: boolean;
   /** Published under an anonymous identity (PRIVACY-001). The server already

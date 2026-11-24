@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { comments, reports } from "@/db/schema";
+import { reports } from "@/db/schema";
 import { currentUser } from "@/lib/session";
+import { getComment } from "@/lib/comments/queries";
 import { errorFromUnknown, jsonError } from "@/lib/api";
 
 const REASONS = ["spam", "abuse", "offtopic", "copyright", "other"] as const;
@@ -17,20 +17,16 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
   try {
     const { id: rawId } = await ctx.params;
     const id = Number(rawId);
-    if (!Number.isInteger(id)) return jsonError("INVALID_INPUT", 400);
+    if (!Number.isSafeInteger(id) || id < 1) return jsonError("INVALID_INPUT", 400);
 
     const user = await currentUser();
+    const comment = await getComment(id, user?.id);
+    if (!comment || comment.status !== "visible") return jsonError("NOT_FOUND", 404);
     if (!user) return jsonError("UNAUTHORIZED", 401, "请先登录");
 
     const parsed = bodySchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return jsonError("INVALID_INPUT", 400, "举报理由无效");
 
-    const [comment] = await db
-      .select({ id: comments.id, userId: comments.userId })
-      .from(comments)
-      .where(eq(comments.id, id))
-      .limit(1);
-    if (!comment) return jsonError("NOT_FOUND", 404);
     if (comment.userId === user.id) {
       return jsonError("INVALID_INPUT", 400, "不能举报自己的评论");
     }

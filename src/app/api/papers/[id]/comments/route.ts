@@ -5,14 +5,17 @@ import { db } from "@/db";
 import { comments, users } from "@/db/schema";
 import { currentUser } from "@/lib/session";
 import { getPrivacySettings } from "@/lib/me/settings";
-import { errorFromUnknown, jsonError } from "@/lib/api";
+import { errorFromUnknown, jsonError, PRIVATE_RESPONSE_HEADERS } from "@/lib/api";
 import { broadcast } from "@/lib/realtime";
 import { notifyReply } from "@/lib/notifications/queries";
-import type { CommentDTO } from "@/lib/comments/types";
+import { canInteract, getReadablePaper } from "@/lib/papers/access";
 import {
   COMMENT_KINDS,
   CommentError,
   assertCanPost,
+  commentViewer,
+  getComment,
+  getCommentDTO,
   listComments,
   recountComment,
 } from "@/lib/comments/queries";
@@ -49,6 +52,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
     const kind = url.searchParams.get("kind");
     const sort = url.searchParams.get("sort") === "hot" ? "hot" : "time";
     const user = await currentUser();
+    if (!await getReadablePaper(id, user?.id)) return jsonError("NOT_FOUND", 404);
 
     const result = await listComments({
       paperId: id,
@@ -59,7 +63,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
       viewerId: user?.id ?? null,
     });
 
-    return NextResponse.json(result);
+    return NextResponse.json(result, { headers: PRIVATE_RESPONSE_HEADERS });
   } catch (error) {
     return errorFromUnknown(error);
   }
@@ -69,7 +73,9 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
   try {
     const { id } = await ctx.params;
     const user = await currentUser();
+    if (!await getReadablePaper(id, user?.id)) return jsonError("NOT_FOUND", 404);
     if (!user) return jsonError("UNAUTHORIZED", 401, "请先登录后发布评论");
+    if (!canInteract(user)) return jsonError("EMAIL_UNVERIFIED", 403, "验证邮箱后即可发布评论");
 
     const parsed = bodySchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) {
@@ -79,6 +85,11 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     const content = parsed.data.content.trim();
     if (!content) return jsonError("INVALID_INPUT", 400, "评论内容不能为空");
 
+    const parent = parsed.data.parentId ? await getComment(parsed.data.parentId, user.id) : null;
+    if (parsed.data.parentId && (!parent || parent.paperId !== id || parent.status !== "visible")) {
+      return jsonError("NOT_FOUND", 404, "该回复目标不可用");
+    }
+
     await assertCanPost(user.id, content);
 
     // Visibility is copied onto the comment at publish time; later changes to
@@ -86,7 +97,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     const privacy = await getPrivacySettings(user.id);
     const isAnonymous = parsed.data.anonymous ?? privacy?.anonymousDefault ?? false;
 
-    const { anchor } = parsed.data;
+    const anchor = parent ?? parsed.data.anchor;
     const [created] = await db
       .insert(comments)
       .values({
@@ -105,7 +116,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
         charEnd: anchor.charEnd ?? null,
         blockId: anchor.blockId ?? null,
         anchorDegraded: !anchor.quote,
-        displayMode: parsed.data.displayMode,
+        displayMode: parent?.displayMode ?? parsed.data.displayMode,
         isAnonymous,
         visibleInProfile: privacy?.profileCommentsVisible ?? true,
         visibleInDanmaku: privacy?.danmakuVisible ?? true,
@@ -128,20 +139,15 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
       .set({ reputation: sql`${users.reputation} + 1` })
       .where(eq(users.id, user.id));
 
-    const dto: CommentDTO = {
-      ...created,
-      createdAt: created.createdAt.toISOString(),
-      // Mirrors the read path: an anonymous comment ships without its author.
-      authorName: isAnonymous ? null : user.name,
-      likedByMe: false,
-    };
+    const dto = await getCommentDTO(created.id, user.id);
+    if (!dto) return jsonError("NOT_FOUND", 404);
 
     // Other readers on this paper refresh their page; the payload carries the
     // new comment so an immediate-display comment can enter the danmaku layer
     // without waiting for a round trip.
-    broadcast(id, { type: "comment:new", comment: dto });
+    broadcast(id, { type: "comment:new", comment: { ...dto, viewer: commentViewer(false) } });
 
-    return NextResponse.json({ comment: dto }, { status: 201 });
+    return NextResponse.json({ comment: dto }, { status: 201, headers: PRIVATE_RESPONSE_HEADERS });
   } catch (error) {
     if (error instanceof CommentError) {
       return jsonError(error.code, error.status, error.message);

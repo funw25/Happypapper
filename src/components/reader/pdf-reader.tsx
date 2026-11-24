@@ -547,7 +547,7 @@ export function PdfReader({
                     document.getElementById(`c${entry.comment.id}`)?.scrollIntoView({ block: "center" });
                   }}
                   className={`pointer-events-auto absolute right-1 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full border text-[10px] ${
-                    entry.comment.userId === currentUserId
+                    entry.comment.viewer.isMine
                       ? "border-[var(--paper-accent)] bg-[var(--paper-accent)] text-[var(--paper-accent-fg)]"
                       : "border-[var(--paper-line)] bg-[var(--paper-surface)] text-[var(--paper-muted)]"
                   }`}

@@ -9,6 +9,7 @@ import {
   STAGE_LABELS,
 } from "@/lib/papers/availability";
 import { getPaper, getProgress } from "@/lib/papers/queries";
+import { canReadPaper } from "@/lib/papers/access";
 
 export const dynamic = "force-dynamic";
 
@@ -25,9 +26,7 @@ export default async function ReadPage({
   if (!paper) notFound();
 
   const user = await currentUser();
-  const isOwner = Boolean(user && paper.uploadedBy === user.id);
-  const isAdmin = user?.role === "admin";
-  if (paper.visibility === "private" && !isOwner && !isAdmin) notFound();
+  if (!canReadPaper(paper, user?.id)) notFound();
 
   if (!paper.pdfPath) {
     const availability = paperAvailability(paper);

@@ -7,6 +7,7 @@ export type CurrentUser = {
   id: string;
   name: string;
   role: string;
+  emailVerified: Date | null;
   avatarBg: string;
   avatarFg: string;
 };
@@ -21,6 +22,7 @@ export async function currentUser(): Promise<CurrentUser | null> {
       id: users.id,
       name: users.name,
       role: users.role,
+      emailVerified: users.emailVerified,
       avatarBg: users.avatarBg,
       avatarFg: users.avatarFg,
     })

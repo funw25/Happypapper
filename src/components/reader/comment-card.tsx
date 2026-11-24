@@ -33,7 +33,7 @@ export function CommentCard({
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const isMine = Boolean(currentUserId && comment.userId === currentUserId);
+  const isMine = comment.viewer.isMine;
 
   async function toggleLike() {
     setBusy(true);

@@ -176,7 +176,7 @@ export default async function AdminPage({
                   {paper.title}
                 </Link>
                 <p className="mt-1 text-xs text-[var(--paper-muted)]">
-                  来源 {paper.source} · 可见性 {paper.visibility} ·{" "}
+                  来源 {paper.source} · {paper.status === "removed" ? "已下架" : paper.visibility} ·{" "}
                   {paper.hasTextLayer ? "有文本层" : "无文本层"} · {paper.commentCount} 条评论 ·{" "}
                   {new Date(paper.createdAt).toLocaleDateString("zh-CN")}
                 </p>
@@ -184,6 +184,7 @@ export default async function AdminPage({
                   <PaperVisibilityActions
                     paperId={paper.id}
                     visibility={paper.visibility}
+                    status={paper.status}
                     hasFile={paper.hasFile}
                   />
                 </div>

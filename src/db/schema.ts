@@ -96,6 +96,7 @@ export const papers = pgTable(
     pdfCheckedAt: timestamp("pdf_checked_at", { withTimezone: true }),
     license: text("license"),
     visibility: text("visibility").notNull().default("public"),
+    status: text("status").notNull().default("active"),
     uploadedBy: uuid("uploaded_by").references(() => users.id, { onDelete: "set null" }),
     hasTextLayer: boolean("has_text_layer").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { readingProgress } from "@/db/schema";
 import { currentUser } from "@/lib/session";
 import { errorFromUnknown, jsonError } from "@/lib/api";
+import { getReadablePaper } from "@/lib/papers/access";
 
 const bodySchema = z.object({
   page: z.number().int().min(1),
@@ -15,6 +16,7 @@ export async function PUT(request: Request, ctx: { params: Promise<{ id: string 
   try {
     const { id } = await ctx.params;
     const user = await currentUser();
+    if (!await getReadablePaper(id, user?.id)) return jsonError("NOT_FOUND", 404);
     if (!user) return jsonError("UNAUTHORIZED", 401, "请先登录");
 
     const parsed = bodySchema.safeParse(await request.json().catch(() => null));

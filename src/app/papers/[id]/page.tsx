@@ -11,6 +11,7 @@ import {
   STAGE_LABELS,
 } from "@/lib/papers/availability";
 import { getFavorite, getPaper, getProgress } from "@/lib/papers/queries";
+import { canManagePaper, canReadPaper } from "@/lib/papers/access";
 
 export const dynamic = "force-dynamic";
 
@@ -24,12 +25,7 @@ export default async function PaperDetailPage({
   if (!paper) notFound();
 
   const user = await currentUser();
-  const isOwner = Boolean(user && paper.uploadedBy === user.id);
-  const isAdmin = user?.role === "admin";
-
-  if (paper.visibility === "private" && !isOwner && !isAdmin) {
-    notFound();
-  }
+  if (!canReadPaper(paper, user?.id)) notFound();
 
   const [favorited, progress] = await Promise.all([
     getFavorite(user?.id ?? null, paper.id),
@@ -82,7 +78,7 @@ export default async function PaperDetailPage({
             paperId={paper.id}
             initialFavorited={favorited}
             initialTags={paper.tags}
-            canEdit={Boolean(user)}
+            canEdit={canManagePaper(paper, user)}
           />
         </div>
 

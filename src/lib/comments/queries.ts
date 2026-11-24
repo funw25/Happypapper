@@ -1,6 +1,7 @@
 import { and, asc, between, count, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { bannedWords, commentLikes, comments, users } from "@/db/schema";
+import { bannedWords, commentLikes, comments, papers, users } from "@/db/schema";
+import { readablePapers } from "@/lib/papers/access";
 import type { CommentDTO } from "./types";
 
 export const COMMENT_KINDS = ["question", "explain", "method", "result", "other"] as const;
@@ -21,7 +22,15 @@ export class CommentError extends Error {
   }
 }
 
-export type CommentRow = Omit<CommentDTO, "createdAt"> & { createdAt: Date };
+type CommentRow = Omit<CommentDTO, "createdAt" | "viewer"> & { createdAt: Date; isMine: boolean };
+
+export function commentViewer(isMine: boolean): CommentDTO["viewer"] {
+  return { isMine, canEdit: false, canDelete: isMine };
+}
+
+function toCommentDTO({ createdAt, isMine, ...fields }: CommentRow): CommentDTO {
+  return { ...fields, createdAt: createdAt.toISOString(), viewer: commentViewer(isMine) };
+}
 
 function selection(viewerId: string | null) {
   return {
@@ -43,7 +52,7 @@ function selection(viewerId: string | null) {
     likeCount: comments.likeCount,
     replyCount: comments.replyCount,
     createdAt: comments.createdAt,
-    userId: comments.userId,
+    isMine: sql<boolean>`coalesce(${comments.userId} = ${viewerId ?? NIL_UUID}, false)`,
     isAnonymous: comments.isAnonymous,
     visibleInDanmaku: comments.visibleInDanmaku,
     // An anonymous comment never leaves the server with its author's name;
@@ -71,6 +80,7 @@ export type CommentQuery = {
 export async function listComments(query: CommentQuery) {
   const filters = [
     eq(comments.paperId, query.paperId),
+    readablePapers(query.viewerId),
     eq(comments.status, "visible"),
     isNull(comments.parentId),
     between(comments.page, query.fromPage, query.toPage),
@@ -87,21 +97,25 @@ export async function listComments(query: CommentQuery) {
   const roots = (await db
     .select(selection(query.viewerId ?? null))
     .from(comments)
+    .innerJoin(papers, eq(papers.id, comments.paperId))
     .leftJoin(users, eq(users.id, comments.userId))
     .where(and(...filters))
     .orderBy(...order)
     .limit(200)) as CommentRow[];
 
   if (roots.length === 0 || query.includeReplies === false) {
-    return { roots, replies: [] as CommentRow[] };
+    return { roots: roots.map(toCommentDTO), replies: [] as CommentDTO[] };
   }
 
   const replies = (await db
     .select(selection(query.viewerId ?? null))
     .from(comments)
+    .innerJoin(papers, eq(papers.id, comments.paperId))
     .leftJoin(users, eq(users.id, comments.userId))
     .where(
       and(
+        readablePapers(query.viewerId),
+        eq(comments.paperId, query.paperId),
         inArray(
           comments.parentId,
           roots.map((r) => r.id),
@@ -111,11 +125,21 @@ export async function listComments(query: CommentQuery) {
     )
     .orderBy(asc(comments.createdAt))) as CommentRow[];
 
-  return { roots, replies };
+  return { roots: roots.map(toCommentDTO), replies: replies.map(toCommentDTO) };
 }
 
-export async function getComment(id: number) {
-  const [row] = await db.select().from(comments).where(eq(comments.id, id)).limit(1);
+export async function getComment(id: number, viewerId?: string | null) {
+  const [row] = await db.select({ comment: comments }).from(comments)
+    .innerJoin(papers, eq(papers.id, comments.paperId))
+    .where(and(eq(comments.id, id), readablePapers(viewerId))).limit(1);
+  return row?.comment ?? null;
+}
+
+export async function getCommentDTO(id: number, viewerId: string | null) {
+  const [row] = await db.select(selection(viewerId)).from(comments)
+    .leftJoin(users, eq(users.id, comments.userId))
+    .where(eq(comments.id, id)).limit(1);
+  if (row) return toCommentDTO(row);
   return row ?? null;
 }
 

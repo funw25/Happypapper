@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
+export const PRIVATE_RESPONSE_HEADERS = { "cache-control": "private, no-store" };
+
 export function jsonError(code: string, status: number, detail?: string) {
-  return NextResponse.json({ error: code, detail }, { status });
+  return NextResponse.json({ error: code, detail }, { status, headers: PRIVATE_RESPONSE_HEADERS });
 }
 
 export function errorFromUnknown(error: unknown) {

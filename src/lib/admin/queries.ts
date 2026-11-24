@@ -89,6 +89,7 @@ export async function listPapersForAdmin() {
       title: papers.title,
       source: papers.source,
       visibility: papers.visibility,
+      status: papers.status,
       hasTextLayer: papers.hasTextLayer,
       hasFile: sql<boolean>`("papers"."pdf_path" is not null)`.as("has_file"),
       createdAt: papers.createdAt,

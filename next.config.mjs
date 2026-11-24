@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  distDir: process.env.HAPPYPAPER_NEXT_DIST_DIR ?? ".next",
+  typescript: { tsconfigPath: process.env.HAPPYPAPER_NEXT_TSCONFIG ?? "tsconfig.json" },
   // Next 16 blocks /_next/* dev resources for origins it does not recognise.
   // Without this, opening the reader on http://127.0.0.1:3100 serves the HTML
   // but never hydrates, because the client chunks are refused.

@@ -1,6 +1,7 @@
 import { and, desc, eq, ilike, or, sql, getTableColumns } from "drizzle-orm";
 import { db } from "@/db";
 import { comments, favorites, papers, readingProgress } from "@/db/schema";
+import { isPaperId, readablePapers } from "./access";
 
 export type PaperListItem = Awaited<ReturnType<typeof listPapers>>[number];
 
@@ -10,7 +11,7 @@ const commentCountSql = sql<number>`(
 )`;
 
 export async function listPapers(options: { q?: string; tag?: string; limit?: number } = {}) {
-  const filters = [eq(papers.visibility, "public")];
+  const filters = [readablePapers()];
 
   if (options.q) {
     const needle = `%${options.q}%`;
@@ -59,7 +60,7 @@ export async function findImported(refs: ImportedRef[]): Promise<Map<string, str
   const rows = await db
     .select({ id: papers.id, source: papers.source, externalId: papers.externalId, doi: papers.doi })
     .from(papers)
-    .where(condition);
+    .where(and(condition, readablePapers()));
 
   const map = new Map<string, string>();
   for (const row of rows) {
@@ -70,6 +71,7 @@ export async function findImported(refs: ImportedRef[]): Promise<Map<string, str
 }
 
 export async function getPaper(id: string) {
+  if (!isPaperId(id)) return null;
   const [row] = await db
     .select({
       ...getTableColumns(papers),
@@ -111,11 +113,12 @@ export async function listRecentComments(limit = 8) {
       page: comments.page,
       createdAt: comments.createdAt,
       paperTitle: papers.title,
-      userName: sql<string | null>`(select u.name from users u where u.id = ${comments.userId})`,
+      userName: sql<string | null>`case when ${comments.isAnonymous} then null
+        else (select u.name from users u where u.id = ${comments.userId}) end`,
     })
     .from(comments)
     .innerJoin(papers, eq(papers.id, comments.paperId))
-    .where(and(eq(comments.status, "visible"), eq(papers.visibility, "public")))
+    .where(and(eq(comments.status, "visible"), readablePapers()))
     .orderBy(desc(comments.createdAt))
     .limit(limit);
 }

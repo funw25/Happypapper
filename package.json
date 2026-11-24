@@ -31,7 +31,8 @@
     "verify:settings": "node scripts/verify-settings.mjs",
     "verify:theme": "node scripts/verify-theme.mjs",
     "verify:reader": "node scripts/verify-reader.mjs",
-    "pdf:worker": "node scripts/copy-pdf-worker.mjs"
+    "pdf:worker": "node scripts/copy-pdf-worker.mjs",
+    "verify:access": "node scripts/verify-access.mjs"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.3",
@@ -39,7 +40,7 @@
     "@electric-sql/pglite": "^0.5.9",
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.4",
-    "next": "^16.4.0",
+    "next": "^16.4.6",
     "next-auth": "^5.0.0-beta.32",
     "pdfjs-dist": "^6.4.299",
     "pg": "^8.23.1",

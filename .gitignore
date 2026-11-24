@@ -11,6 +11,7 @@ next-env.d.ts
 
 # 验证脚本的临时产物（隔离数据库、截图）
 .verify
+tsconfig.happypaper-test-*.json
 
 # 备份产物（npm run db:backup）
 backups

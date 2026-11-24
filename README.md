@@ -6,19 +6,21 @@
 
 范围定义见 [docs/00-mvp-spec.md](docs/00-mvp-spec.md)，技术栈决策见 [docs/01-stack-decision.md](docs/01-stack-decision.md)。
 
+弹幕阅读社区 V1 见 [实施规格](docs/06-danmaku-v1-implementation-plan.md) 与 [当前进度](docs/implementation-status.md)。
+
 ## 运行
 
 不需要 Docker，也不需要单独安装数据库：PGlite 在进程内运行 Postgres。
 
 ```bash
-npm install --ignore-scripts   # esbuild 的 postinstall 在受限沙箱下会失败，忽略它不影响本项目
+npm ci --ignore-scripts   # esbuild 的 postinstall 在受限沙箱下会失败，忽略它不影响本项目
 npm run db:migrate             # 建表
 npm run db:seed                # 创建 admin / reader 两个本地账号
 npm run pdf:worker             # 把 pdf.js worker 复制到 public/
 npm run dev                    # http://localhost:3100
 ```
 
-打开 `http://localhost:3100`，用 `reader@happypaper.local` / `reader12345` 登录，进论文点「开始阅读」。
+打开 `http://localhost:3100`，用 `reader@happypaper.local` / `reader12345` 登录，进论文点「开始阅读」。未验证的账号可读公开论文、收藏和保存进度。评论、点赞和导入需要验证邮箱。无邮件配置的本地开发可运行隔离的权限回归。
 
 ## 数据库后端
 
@@ -94,7 +96,7 @@ npm run db:reset     # 删除数据目录，重新执行全部迁移与种子
 
 ## 验证
 
-七个脚本都可重复执行，退出码 0 表示全部通过。
+验证脚本可重复执行，退出码 0 表示全部通过。访问与隐私回归会自行启动隔离环境。
 
 ```bash
 npm run verify:smoke          # 63 项，需要开发服务器在运行
@@ -105,7 +107,8 @@ npm run verify:search-ui      # 4 项，检索表单防抖与结果渲染，需�
 npm run verify:github         # 14 项，GitHub 登录接线与首登昵称规则；无凭据时 9 项通过并退出码 2（表示待定）
 npm run verify:github-schema  # 6 项，OAuth 首登要写的表结构；需要先停掉开发服务器
 npm run verify:account        # 31 至 36 项，邮箱验证、修改邮箱、密码找回与解绑保护，需要开发服务器
-npm run verify:anchor         # 12 项，独立运行，读取 storage/pdfs 里最新的 PDF
+npm run verify:anchor         # 12 项，独立运行，读取固定测试 PDF
+npm run verify:access         # 本机隔离数据库、固定 PDF、真实 HTTP/SSE 权限回归
 npm run verify:reader         # 15 项，需要开发服务器 + 本机 Chrome/Edge
 npm run verify:settings       # 27 项，个人资料、密码、隐私设置与评论署名联动，需要开发服务器
 npm run verify:theme          # 8 项，三态主题与深色令牌，需要开发服务器 + 本机 Chrome/Edge
@@ -125,7 +128,7 @@ npm run typecheck             # tsc --noEmit
 | `verify:github-schema` | OAuth 首次登录要写的表结构：可以创建没有本地密码的账号、可以把 GitHub 身份写入 `accounts`、同一 GitHub 身份不能被重复绑定、同名账号被拒绝、删除账号会级联删除绑定、检查过程不留下数据。需要先停开发服务器，全程事务回滚 |
 | `verify:account` | 账号闭环：三个页面可访问；账号安全页含邮箱验证、修改邮箱与 GitHub 绑定入口；给当前邮箱发验证邮件并从开发服务器日志取回令牌、确认后邮箱标记已验证、同一令牌不能重复使用；改成他人占用的邮箱返回 409、改成新地址先进入待确认状态、确认后新邮箱生效且旧邮箱不再能登录；未绑定 GitHub 时解绑返回 `NOT_LINKED`、未登录的解绑与绑定发起返回 401；配置 OAuth 后绑定发起跳转 GitHub 授权页并带 client_id、自建回调地址、只读 scope 与 HttpOnly state cookie，回调在 state 不匹配或缺 cookie 时回到账号页说明原因；未注册邮箱申请找回返回同样响应（不枚举用户）、过短新密码被拒、令牌一次性、新旧密码登录结果、找回接口限流。邮件通道未配置时链接写入开发服务器日志，脚本按请求偏移从日志取令牌，没有测试专用旁路 |
 | `verify:github-flow` | GitHub 登录与绑定的完整链路（真实浏览器 + 真实 HTTP + 本地假提供方）：首登自动建号并使用 GitHub 昵称邮箱；昵称与已有用户重名时自动加后缀；无公开邮箱时回落到登录名与占位邮箱；邮箱账号可把 GitHub 绑到当前账号并报告两种登录方式；绑定的身份用 GitHub 登录会进入同一个账号（证明绑定写入的 `provider_account_id` 与 Auth.js 登录查询用的是同一约定）；同一 GitHub 身份不能绑到第二个账号；只剩 GitHub 一种登录方式时拒绝解绑且绑定保留；有本地密码时可以解绑 |
-| `verify:anchor` | 用真实 PDF（Attention Is All You Need 第 4 页的 175 个文本项）验证引用定位，并验证**重新分块、大小写变化、空格变化、连字符换行**后仍能定位；同一句出现两次时用前后文选中正确的一处 |
+| `verify:anchor` | 用固定测试 PDF（F01 的第 4 页）验证引用定位，并验证**重新分块、大小写变化、空格变化、连字符换行**后仍能定位；同一句出现两次时用前后文选中正确的一处 |
 | `verify:reader` | 真实浏览器：登录后打开阅读器，确认画布与文本层渲染、在文本层建立选区并转成锚点草稿、发布评论、服务端保存引用与前后文，**刷新后位置标记偏差 0.0px**、**缩放到 160% 后标记仍跟随文本**、无前端异常 |
 | `verify:settings` | `/settings/profile`、`/settings/account`、`/settings/privacy` 三个页面可访问且未登录被重定向；昵称、头像配色、简介保存后刷新仍在；占用他人昵称返回 409、过短昵称 400；**头像**：设置页与公开主页都按昵称前两个字符渲染、默认配色为 #002FA7 + 白字、自定义配色保存后自动转大写并出现在公开主页、非法颜色与三位简写被拒；三个隐私开关保存后刷新生效；默认匿名设置使新评论的署名在接口响应里就是 `null` 且 `isAnonymous` 为真；关闭弹幕后新评论 `visibleInDanmaku` 为假；关闭主页评论后公开主页不列评论并给出说明；显式取消匿名时按公开昵称署名；密码修改的三种结果（当前密码错误 403、新密码过短 400、正确 200）与用新密码重新登录；结束时还原资料、隐私设置与密码 |
 | `verify:theme` | 真实浏览器：设置页出现三态主题控件；浅色与深色下 `<html data-theme>`、页面背景与文字颜色、卡片表面色实际互换且深色卡片不是白底；刷新后仍保持已选主题；模拟系统深色时「跟随系统」解析为深色、系统改为浅色后无需改设置即跟随；论文库页沿用同一主题。截图输出到 `.verify/screenshots/` |

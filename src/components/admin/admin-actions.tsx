@@ -145,10 +145,12 @@ export function MuteActions({ userId, mutedUntil }: { userId: string; mutedUntil
 export function PaperVisibilityActions({
   paperId,
   visibility,
+  status,
   hasFile,
 }: {
   paperId: string;
   visibility: string;
+  status: string;
   hasFile: boolean;
 }) {
   const { busy, error, run } = useAction();
@@ -163,27 +165,31 @@ export function PaperVisibilityActions({
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Button
-        disabled={busy || visibility === "private"}
+        disabled={busy || status === "removed" || visibility === "private"}
         onClick={() => void set({ visibility: "private" })}
       >
         转为私有
       </Button>
       <Button
-        disabled={busy || visibility === "public"}
-        onClick={() => void set({ visibility: "public" })}
+        disabled={busy || status === "removed" || visibility === "public"}
+        onClick={() => {
+          if (window.confirm("确认你拥有文件的公开分发权利。公开后，所有读者都可以访问文件及其讨论。")) {
+            void set({ visibility: "public", rightsClaimed: true });
+          }
+        }}
       >
         转为公开
       </Button>
-      <Button
-        disabled={busy || !hasFile}
-        danger
-        onClick={() => {
-          if (!window.confirm("删除本站缓存的 PDF 并转为私有？此操作不可撤销。")) return;
-          void set({ visibility: "private", removeFile: true });
-        }}
-      >
-        下架并删除文件
-      </Button>
+      {status === "removed" ? (
+        <Button disabled={busy} onClick={() => void set({ status: "active" })}>恢复论文</Button>
+      ) : (
+        <Button disabled={busy} danger onClick={() => void set({ status: "removed" })}>下架论文</Button>
+      )}
+      {status === "removed" && hasFile ? (
+        <Button disabled={busy} danger onClick={() => {
+          if (window.confirm("永久删除本站缓存的 PDF？")) void set({ removeFile: true });
+        }}>删除缓存文件</Button>
+      ) : null}
       {error ? <span className="text-xs text-[var(--paper-danger)]">{error}</span> : null}
     </div>
   );

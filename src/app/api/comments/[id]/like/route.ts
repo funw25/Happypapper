@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { commentLikes, comments, users } from "@/db/schema";
+import { commentLikes, users } from "@/db/schema";
 import { currentUser } from "@/lib/session";
 import { errorFromUnknown, jsonError } from "@/lib/api";
-import { recountComment } from "@/lib/comments/queries";
+import { getComment, recountComment } from "@/lib/comments/queries";
+import { canInteract } from "@/lib/papers/access";
 import { notifyLike, removeLikeNotification } from "@/lib/notifications/queries";
 import { broadcastCommentCounts } from "@/lib/comments/broadcast";
 import { sql } from "drizzle-orm";
@@ -12,7 +13,7 @@ import { sql } from "drizzle-orm";
 async function resolveId(ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   const parsed = Number(id);
-  return Number.isInteger(parsed) ? parsed : null;
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 export async function POST(_request: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -21,10 +22,10 @@ export async function POST(_request: Request, ctx: { params: Promise<{ id: strin
     if (id === null) return jsonError("INVALID_INPUT", 400);
 
     const user = await currentUser();
-    if (!user) return jsonError("UNAUTHORIZED", 401, "请先登录");
-
-    const [comment] = await db.select().from(comments).where(eq(comments.id, id)).limit(1);
+    const comment = await getComment(id, user?.id);
     if (!comment || comment.status !== "visible") return jsonError("NOT_FOUND", 404);
+    if (!user) return jsonError("UNAUTHORIZED", 401, "请先登录");
+    if (!canInteract(user)) return jsonError("EMAIL_UNVERIFIED", 403, "验证邮箱后即可点赞");
 
     const inserted = await db
       .insert(commentLikes)
@@ -58,13 +59,9 @@ export async function DELETE(_request: Request, ctx: { params: Promise<{ id: str
     if (id === null) return jsonError("INVALID_INPUT", 400);
 
     const user = await currentUser();
+    const comment = await getComment(id, user?.id);
+    if (!comment || comment.status !== "visible") return jsonError("NOT_FOUND", 404);
     if (!user) return jsonError("UNAUTHORIZED", 401, "请先登录");
-
-    const [comment] = await db
-      .select({ paperId: comments.paperId })
-      .from(comments)
-      .where(eq(comments.id, id))
-      .limit(1);
 
     await db
       .delete(commentLikes)
@@ -74,7 +71,7 @@ export async function DELETE(_request: Request, ctx: { params: Promise<{ id: str
     await removeLikeNotification({ commentId: id, actorId: user.id });
 
     await recountComment(id);
-    if (comment) await broadcastCommentCounts(comment.paperId, id);
+    await broadcastCommentCounts(comment.paperId, id);
     return NextResponse.json({ liked: false });
   } catch (error) {
     return errorFromUnknown(error);

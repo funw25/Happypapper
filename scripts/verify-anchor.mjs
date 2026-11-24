@@ -1,16 +1,15 @@
 /**
- * Verifies the position-anchoring algorithm against the real cached PDF.
+ * Verifies the position-anchoring algorithm against the fixed fixture PDF.
  *
  *   node scripts/verify-anchor.mjs
  *
  * A comment stores page + normalized y + the quoted text + surrounding context.
  * Recovery has to survive a different PDF.js text layer: different item
  * chunking, different whitespace, hyphenation across a line break, changed
- * case, and typographic quotes. This script loads the cached PDF, extracts a
+ * case, and typographic quotes. This script loads the fixture PDF, extracts a
  * real sentence, and replays those variations through src/lib/anchor.ts.
  */
-import { readdir, readFile, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
 import {
   buildPageIndex,
   buildQuoteContext,
@@ -25,19 +24,7 @@ function check(name, ok, detail = "") {
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? ` — ${detail}` : ""}`);
 }
 
-async function newestPdf() {
-  const dir = resolve(process.env.STORAGE_DIR ?? "./storage/pdfs");
-  const files = (await readdir(dir)).filter((f) => f.endsWith(".pdf"));
-  if (files.length === 0) throw new Error(`no cached PDF in ${dir}; run scripts/smoke.mjs first`);
-
-  const withTime = await Promise.all(
-    files.map(async (file) => ({ file, time: (await stat(join(dir, file))).mtimeMs })),
-  );
-  withTime.sort((a, b) => b.time - a.time);
-  return join(dir, withTime[0].file);
-}
-
-const pdfPath = process.env.ANCHOR_PDF ?? (await newestPdf());
+const pdfPath = process.env.ANCHOR_PDF ?? new URL("../tests/fixtures/F01-reading-notes.pdf", import.meta.url);
 console.log(`pdf: ${pdfPath}\n`);
 
 const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");

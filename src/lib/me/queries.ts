@@ -1,8 +1,23 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { comments, favorites, papers, readingProgress, users } from "@/db/schema";
+import { readablePapers } from "@/lib/papers/access";
+
+function publicCommentFilter() {
+  return and(
+    eq(comments.status, "visible"),
+    eq(comments.visibleInProfile, true),
+    eq(comments.isAnonymous, false),
+    readablePapers(),
+  );
+}
 
 export async function profileByName(name: string) {
+  const publicStatsFilter = and(eq(comments.userId, users.id), eq(users.profileCommentsVisible, true), publicCommentFilter());
+  const publicComments = db.select({ value: sql<number>`count(*)::int` })
+    .from(comments).innerJoin(papers, eq(papers.id, comments.paperId)).where(publicStatsFilter);
+  const publicLikes = db.select({ value: sql<number>`coalesce(sum(${comments.likeCount}), 0)::int` })
+    .from(comments).innerJoin(papers, eq(papers.id, comments.paperId)).where(publicStatsFilter);
   const [row] = await db
     .select({
       id: users.id,
@@ -11,18 +26,11 @@ export async function profileByName(name: string) {
       avatarFg: users.avatarFg,
       bio: users.bio,
       role: users.role,
-      reputation: users.reputation,
       createdAt: users.createdAt,
       mutedUntil: users.mutedUntil,
       profileCommentsVisible: users.profileCommentsVisible,
-      commentCount: sql<number>`(
-        select count(*)::int from "comments" c
-        where c.user_id = "users"."id" and c.status = 'visible'
-      )`.as("comment_count"),
-      receivedLikes: sql<number>`(
-        select coalesce(sum(c.like_count), 0)::int from "comments" c
-        where c.user_id = "users"."id" and c.status = 'visible'
-      )`.as("received_likes"),
+      commentCount: sql<number>`(${publicComments})`.as("comment_count"),
+      receivedLikes: sql<number>`(${publicLikes})`.as("received_likes"),
     })
     .from(users)
     .where(eq(users.name, name))
@@ -55,10 +63,9 @@ export async function commentsByUser(
   limit = 50,
   options: { publicProfile?: boolean } = {},
 ): Promise<CommentWithPaper[]> {
-  const filters = [eq(comments.userId, userId), eq(comments.status, "visible")];
-  if (options.publicProfile) {
-    filters.push(eq(comments.visibleInProfile, true), eq(comments.isAnonymous, false));
-  }
+  const visibility = options.publicProfile
+    ? publicCommentFilter()
+    : and(eq(comments.status, "visible"), readablePapers(userId));
 
   return db
     .select({
@@ -75,7 +82,7 @@ export async function commentsByUser(
     })
     .from(comments)
     .innerJoin(papers, eq(papers.id, comments.paperId))
-    .where(and(...filters))
+    .where(and(eq(comments.userId, userId), visibility))
     .orderBy(desc(comments.createdAt))
     .limit(limit);
 }
@@ -96,7 +103,7 @@ export async function favoritesByUser(userId: string) {
     })
     .from(favorites)
     .innerJoin(papers, eq(papers.id, favorites.paperId))
-    .where(eq(favorites.userId, userId))
+    .where(and(eq(favorites.userId, userId), readablePapers(userId)))
     .orderBy(desc(favorites.createdAt));
 }
 
@@ -111,6 +118,6 @@ export async function readingByUser(userId: string) {
     })
     .from(readingProgress)
     .innerJoin(papers, eq(papers.id, readingProgress.paperId))
-    .where(eq(readingProgress.userId, userId))
+    .where(and(eq(readingProgress.userId, userId), readablePapers(userId)))
     .orderBy(desc(readingProgress.updatedAt));
 }

@@ -6,8 +6,10 @@
  * degrades to polling-free static comments in that case, because a client only
  * ever sees events from the instance it connected to.
  */
+import type { CommentDTO } from "@/lib/comments/types";
+
 export type RealtimeEvent =
-  | { type: "comment:new"; comment: unknown }
+  | { type: "comment:new"; comment: CommentDTO }
   | { type: "comment:update"; id: number; likeCount: number; replyCount: number; status: string }
   | { type: "presence"; viewers: number };
 
@@ -16,6 +18,7 @@ type Subscriber = {
   paperId: string;
   userId: string | null;
   send: (event: RealtimeEvent) => void;
+  close: () => void;
 };
 
 type Registry = {
@@ -44,17 +47,23 @@ export function viewerCount(paperId: string): number {
   return seen.size;
 }
 
-export function broadcast(paperId: string, event: RealtimeEvent) {
+export function broadcast(paperId: string, event: RealtimeEvent, exceptId?: string) {
   for (const subscriber of registry.subscribers.values()) {
-    if (subscriber.paperId !== paperId) continue;
+    if (subscriber.paperId !== paperId || subscriber.id === exceptId) continue;
     try {
       subscriber.send(event);
     } catch {
-      registry.subscribers.delete(subscriber.id);
+      subscriber.close();
     }
   }
 }
 
-export function broadcastPresence(paperId: string) {
-  broadcast(paperId, { type: "presence", viewers: viewerCount(paperId) });
+export function broadcastPresence(paperId: string, exceptId?: string) {
+  broadcast(paperId, { type: "presence", viewers: viewerCount(paperId) }, exceptId);
+}
+
+export function revokePaperAccess(paperId: string, ownerId?: string | null) {
+  for (const subscriber of registry.subscribers.values()) {
+    if (subscriber.paperId === paperId && (!ownerId || subscriber.userId !== ownerId)) subscriber.close();
+  }
 }

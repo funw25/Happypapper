@@ -1,7 +1,8 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { papers, type Paper } from "@/db/schema";
 import { storage } from "@/lib/storage";
+import { canReadPaper, getReadablePaper, readablePapers } from "./access";
 import { fetchMetadata, OpenAlexError, parseIdentifier, type PaperMetadata } from "./openalex";
 
 const MAX_PDF_BYTES = 60 * 1024 * 1024;
@@ -138,7 +139,10 @@ export async function importFromIdentifier(
   }
 
   const existing = await findExisting(parsed.source, parsed.id);
-  if (existing) return result(existing, false);
+  if (existing) {
+    if (!canReadPaper(existing, uploadedBy)) throw new ImportError("论文不可用", "NOT_FOUND", 404);
+    return result(existing, false);
+  }
 
   let metadata: PaperMetadata;
   try {
@@ -201,8 +205,8 @@ export async function importFromIdentifier(
  * candidate list is rebuilt from the stored metadata rather than trusted from
  * the request, so a retry cannot be pointed at an arbitrary URL.
  */
-export async function attachRemotePdf(paperId: string): Promise<ImportResult> {
-  const [paper] = await db.select().from(papers).where(eq(papers.id, paperId)).limit(1);
+export async function attachRemotePdf(paperId: string, viewerId: string): Promise<ImportResult> {
+  const paper = await getReadablePaper(paperId, viewerId);
   if (!paper) throw new ImportError("论文不存在", "NOT_FOUND", 404);
   if (paper.pdfPath) return result(paper, false);
 
@@ -214,17 +218,20 @@ export async function attachRemotePdf(paperId: string): Promise<ImportResult> {
 
   const downloaded = await fetchPdfForCandidates(Array.from(new Set(candidates)));
   const now = new Date();
+  const writable = and(eq(papers.id, paperId), readablePapers(viewerId), isNull(papers.pdfPath));
 
   if ("error" in downloaded) {
     const [updated] = await db
       .update(papers)
       .set({ pdfFetchError: downloaded.error.code, pdfCheckedAt: now })
-      .where(eq(papers.id, paperId))
+      .where(writable)
       .returning();
-    return result(updated, false);
+    const latest = updated ?? await getReadablePaper(paperId, viewerId);
+    if (!latest) throw new ImportError("论文不可用", "NOT_FOUND", 404);
+    return result(latest, false);
   }
 
-  const pdfPath = `${paperId}.pdf`;
+  const pdfPath = paperId + "-" + crypto.randomUUID() + ".pdf";
   await storage.put(pdfPath, downloaded.bytes);
   const [updated] = await db
     .update(papers)
@@ -235,9 +242,14 @@ export async function attachRemotePdf(paperId: string): Promise<ImportResult> {
       pdfCheckedAt: now,
       hasTextLayer: detectTextLayer(downloaded.bytes),
     })
-    .where(eq(papers.id, paperId))
+    .where(writable)
     .returning();
-
+  if (!updated) {
+    await storage.delete(pdfPath);
+    const latest = await getReadablePaper(paperId, viewerId);
+    if (!latest) throw new ImportError("论文不可用", "NOT_FOUND", 404);
+    return result(latest, false);
+  }
   return result(updated, false);
 }
 
