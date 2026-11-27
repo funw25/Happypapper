@@ -7,6 +7,12 @@ export function jsonError(code: string, status: number, detail?: string) {
 }
 
 export function errorFromUnknown(error: unknown) {
+  // Domain errors carry an explicit HTTP status and a public message.
+  if (error instanceof Error && "code" in error && "status" in error &&
+      typeof error.code === "string" && typeof error.status === "number" &&
+      error.status >= 400 && error.status < 500) {
+    return jsonError(error.code, error.status, error.message);
+  }
   const message = error instanceof Error ? error.message : "UNKNOWN";
   if (message === "UNAUTHORIZED") return jsonError("UNAUTHORIZED", 401, "请先登录");
   if (message === "FORBIDDEN") return jsonError("FORBIDDEN", 403, "没有权限");

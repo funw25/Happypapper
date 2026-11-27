@@ -67,8 +67,8 @@ export async function notifyLike(input: {
   commentId: number;
   paperId: string;
   actorId: string;
-}): Promise<boolean> {
-  const [comment] = await db
+}, conn = db): Promise<boolean> {
+  const [comment] = await conn
     .select({ userId: comments.userId })
     .from(comments)
     .where(eq(comments.id, input.commentId))
@@ -76,14 +76,14 @@ export async function notifyLike(input: {
 
   if (!comment?.userId || comment.userId === input.actorId) return false;
 
-  const [author] = await db
+  const [author] = await conn
     .select({ notifyLikes: users.notifyLikes })
     .from(users)
     .where(eq(users.id, comment.userId))
     .limit(1);
   if (!author?.notifyLikes) return false;
 
-  await db
+  await conn
     .delete(notifications)
     .where(
       and(
@@ -94,7 +94,7 @@ export async function notifyLike(input: {
       ),
     );
 
-  await db.insert(notifications).values({
+  await conn.insert(notifications).values({
     userId: comment.userId,
     commentId: input.commentId,
     paperId: input.paperId,
@@ -108,8 +108,8 @@ export async function notifyLike(input: {
 export async function removeLikeNotification(input: {
   commentId: number;
   actorId: string;
-}): Promise<number> {
-  const deleted = await db
+}, conn = db): Promise<number> {
+  const deleted = await conn
     .delete(notifications)
     .where(
       and(

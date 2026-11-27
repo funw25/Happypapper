@@ -276,8 +276,23 @@ export function DanmakuPlayer({ paperId, versionId, versionLabel, page, ready, s
     setFeedStatus("ready");
   });
 
+  const reconnect = useEffectEvent(() => {
+    const current = queue.current;
+    if (!current) return;
+    current.request?.abort();
+    // Replace the entire query generation so an earlier response cannot
+    // mutate the recovered cursor. Keep the played set for this scope.
+    queue.current = { ...current, pending: [], cursor: undefined, request: null,
+      error: null, recovered: false, refreshLatest: false, dirtyHot: false, hotStarted: Date.now() };
+    replaceActive([]);
+    setPreview([]);
+    setSelected(null);
+    setFeedStatus("loading");
+  });
+
   useEffect(() => {
     const listener = (event: Event) => receive((event as CustomEvent<RealtimeEvent>).detail);
+    const connected = () => reconnect();
     let accessCheck: AbortController | null = null;
     const recheckAccess = () => {
       if (accessCheck) return;
@@ -300,9 +315,11 @@ export function DanmakuPlayer({ paperId, versionId, versionLabel, page, ready, s
     };
     events.addEventListener("comment", listener);
     events.addEventListener("disconnected", recheckAccess);
+    events.addEventListener("connected", connected);
     return () => {
       events.removeEventListener("comment", listener);
       events.removeEventListener("disconnected", recheckAccess);
+      events.removeEventListener("connected", connected);
       accessCheck?.abort();
     };
   }, [events, paperId, replaceActive]);

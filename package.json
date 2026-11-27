@@ -34,7 +34,8 @@
     "pdf:worker": "node scripts/copy-pdf-worker.mjs",
     "verify:access": "node scripts/verify-access.mjs",
     "verify:reader-v1": "node scripts/verify-reader-v1.mjs",
-    "verify:danmaku": "node scripts/verify-danmaku.mjs"
+    "verify:danmaku": "node scripts/verify-danmaku.mjs",
+    "verify:comment-mutations": "node scripts/verify-comment-mutations.mjs"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.3",

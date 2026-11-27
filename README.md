@@ -113,6 +113,7 @@ npm run verify:access         # 本机隔离数据库、固定 PDF、真实 HTTP
 npm run verify:reader         # 15 项，需要开发服务器 + 本机 Chrome/Edge
 npm run verify:reader-v1      # 27 项，自行启动隔离服务，需要本机 Chrome/Edge
 npm run verify:danmaku        # 全文弹幕的 API 与 Chrome/Edge 回归，自行启动隔离服务
+npm run verify:comment-mutations # 并发点赞、通知一致性与回复隐藏/恢复/删除计数
 npm run verify:settings       # 27 项，个人资料、密码、隐私设置与评论署名联动，需要开发服务器
 npm run verify:theme          # 8 项，三态主题与深色令牌，需要开发服务器 + 本机 Chrome/Edge
 npm run typecheck             # tsc --noEmit

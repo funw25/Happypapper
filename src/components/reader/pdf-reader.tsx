@@ -331,6 +331,12 @@ export function PdfReader({
     };
     source.addEventListener("comment:new", refresh);
     source.addEventListener("comment:update", refresh);
+    source.addEventListener("open", () => {
+      // This also runs after EventSource reconnects. Re-read authorized state
+      // to recover changes made while this reader was disconnected.
+      void loadCommentsRef.current();
+      danmakuEvents.dispatchEvent(new Event("connected"));
+    });
     source.addEventListener("error", () => danmakuEvents.dispatchEvent(new Event("disconnected")));
 
     // EventSource reconnects on its own; closing on unmount is all that is needed.
