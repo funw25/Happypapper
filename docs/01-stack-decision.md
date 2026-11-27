@@ -10,7 +10,7 @@
 
 ## 2. 评估维度
 
-维度按本产品的实际约束排序，前三项是硬约束。
+维度按本产品的实际约束排序
 
 | 优先级 | 维度 | 与本产品的关系 |
 | --- | --- | --- |
@@ -21,7 +21,7 @@
 | 5 | 类型与契约一致性 | 锚点结构跨前后端传递，字段漂移会静默破坏定位 |
 | 6 | 迁移与部署成本 | 决定 MVP 之后能否平滑演进 |
 
-定位查询本身在三个方案中都是同一条 SQL（`paper_id + page + y_norm` 范围扫描），不构成区分度。区分度集中在实时通道、文件存储、后台任务、权限模型四处。
+定位查询在三个方案中都是同一条 SQL（`paper_id + page + y_norm` 范围扫描）。区分度集中在实时通道、文件存储、后台任务、权限模型四处。
 
 ## 3. 方案 1：Next.js 单体 + 自建 Postgres
 
@@ -40,13 +40,13 @@ Next.js 15 App Router 同时承载页面与 `/api` 路由，Drizzle 直连 Postg
 ### 代价
 
 1. 需要长驻 Node 进程。部署到 Vercel Serverless 时 SSE 受函数执行时长上限约束，需要引入第三方 pub/sub 中转；Vercel 官方知识库对实时数据给出的方案正是外接发布订阅服务（[Vercel KB](https://vercel.com/kb/guide/publish-and-subscribe-to-realtime-data-on-vercel?from=graph&source_path=%2Fdocs%2Ffunctions%2Flimitations&source_site=vercel-docs&relationship=inbound&surface=html)），其 Edge Function 另有独立的执行时长限制（[Vercel Changelog](https://vercel.com/changelog/new-execution-duration-limit-for-edge-functions?from=graph&source_path=%2Fdocs%2Ffluid-compute&source_site=vercel-docs&relationship=inbound)）。本机磁盘在同一环境下也不可用。
-2. 含原生模块的库（PDF 解析、canvas）在 Next.js 打包时需要额外配置，可能触发 `serverExternalPackages`。
+2. 含原生模块的库（PDF 解析、canvas）在 Next.js 打包时需额外配置，可能触发 `serverExternalPackages`。
 3. 定时与批量任务只能塞进 route handler、独立脚本或系统 cron。
 4. 进程内在线状态在单实例下正确，多实例时失效。
 
 ### 工期
 
-8.5 人日，与规格里程碑一致。
+8.5 日，与规格里程碑一致。
 
 ## 4. 方案 2：Next.js 前端 + NestJS / FastAPI 后端
 
