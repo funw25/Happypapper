@@ -1,6 +1,7 @@
-import { and, asc, between, count, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, between, count, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { bannedWords, commentLikes, comments, papers, users } from "@/db/schema";
+import { codePointCount } from "@/lib/anchor-v2";
 import { readablePapers } from "@/lib/papers/access";
 import type { CommentDTO } from "./types";
 
@@ -9,7 +10,7 @@ export type CommentKindValue = (typeof COMMENT_KINDS)[number];
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 5;
-const MAX_CONTENT_LENGTH = 1000;
+const MAX_CONTENT_LENGTH = 2000;
 const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 
 export class CommentError extends Error {
@@ -48,6 +49,9 @@ function selection(viewerId: string | null) {
     charEnd: comments.charEnd,
     blockId: comments.blockId,
     anchorDegraded: comments.anchorDegraded,
+    anchor: comments.anchorV2,
+    paperVersionId: comments.paperVersionId,
+    danmakuText: comments.danmakuText,
     displayMode: comments.displayMode,
     likeCount: comments.likeCount,
     replyCount: comments.replyCount,
@@ -75,6 +79,8 @@ export type CommentQuery = {
   sort?: "time" | "hot";
   viewerId?: string | null;
   includeReplies?: boolean;
+  versionId?: string | null;
+  focusRootId?: number;
 };
 
 export async function listComments(query: CommentQuery) {
@@ -83,7 +89,13 @@ export async function listComments(query: CommentQuery) {
     readablePapers(query.viewerId),
     eq(comments.status, "visible"),
     isNull(comments.parentId),
-    between(comments.page, query.fromPage, query.toPage),
+    or(
+      sql<boolean>`${comments.anchorV2}->>'type' = 'paper'`,
+      and(
+        between(comments.page, query.fromPage, query.toPage),
+        query.versionId ? eq(comments.paperVersionId, query.versionId) : isNull(comments.paperVersionId),
+      ),
+    ),
   ];
   if (query.kind && query.kind !== "all") {
     filters.push(eq(comments.kind, query.kind));
@@ -93,6 +105,8 @@ export async function listComments(query: CommentQuery) {
     query.sort === "hot"
       ? [desc(sql`${comments.likeCount} * 2 + ${comments.replyCount} * 3`), desc(comments.createdAt)]
       : [asc(comments.page), asc(comments.yNorm), desc(comments.createdAt)];
+  if (query.focusRootId) order.unshift(desc(sql`${comments.id} = ${query.focusRootId}`));
+  order.push(desc(comments.id));
 
   const roots = (await db
     .select(selection(query.viewerId ?? null))
@@ -143,23 +157,31 @@ export async function getCommentDTO(id: number, viewerId: string | null) {
   return row ?? null;
 }
 
-export async function loadBannedWords() {
-  const words = await db.select({ word: bannedWords.word }).from(bannedWords);
+export async function getVisibleCommentDTO(id: number, viewerId: string | null) {
+  const [row] = await db.select(selection(viewerId)).from(comments)
+    .innerJoin(papers, eq(papers.id, comments.paperId))
+    .leftJoin(users, eq(users.id, comments.userId))
+    .where(and(eq(comments.id, id), eq(comments.status, "visible"), readablePapers(viewerId))).limit(1);
+  return row ? toCommentDTO(row) : null;
+}
+
+export async function loadBannedWords(conn = db) {
+  const words = await conn.select({ word: bannedWords.word }).from(bannedWords);
   return words.map((w) => w.word);
 }
 
-export async function assertCanPost(userId: string, content: string) {
-  if (content.length > MAX_CONTENT_LENGTH) {
+export async function assertCanPost(userId: string, content: string, conn = db) {
+  if (codePointCount(content) > MAX_CONTENT_LENGTH) {
     throw new CommentError("TOO_LONG", 422, `评论最多 ${MAX_CONTENT_LENGTH} 字`);
   }
 
-  const words = await loadBannedWords();
+  const words = await loadBannedWords(conn);
   const hit = words.find((word) => word && content.includes(word));
   if (hit) {
     throw new CommentError("BANNED_WORD", 422, `内容包含被禁止的词：${hit}`);
   }
 
-  const [account] = await db
+  const [account] = await conn
     .select({ mutedUntil: users.mutedUntil })
     .from(users)
     .where(eq(users.id, userId))
@@ -169,7 +191,7 @@ export async function assertCanPost(userId: string, content: string) {
   }
 
   const since = new Date(Date.now() - RATE_LIMIT_WINDOW_MS);
-  const [recent] = await db
+  const [recent] = await conn
     .select({ total: count() })
     .from(comments)
     .where(and(eq(comments.userId, userId), gte(comments.createdAt, since)));
@@ -179,17 +201,17 @@ export async function assertCanPost(userId: string, content: string) {
   }
 }
 
-export async function recountComment(commentId: number) {
-  const [likes] = await db
+export async function recountComment(commentId: number, conn = db) {
+  const [likes] = await conn
     .select({ total: count() })
     .from(commentLikes)
     .where(eq(commentLikes.commentId, commentId));
-  const [replies] = await db
+  const [replies] = await conn
     .select({ total: count() })
     .from(comments)
     .where(and(eq(comments.parentId, commentId), eq(comments.status, "visible")));
 
-  await db
+  await conn
     .update(comments)
     .set({ likeCount: likes?.total ?? 0, replyCount: replies?.total ?? 0 })
     .where(eq(comments.id, commentId));

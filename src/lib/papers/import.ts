@@ -3,9 +3,10 @@ import { db } from "@/db";
 import { papers, type Paper } from "@/db/schema";
 import { storage } from "@/lib/storage";
 import { canReadPaper, getReadablePaper, readablePapers } from "./access";
+import { attachPdfVersion, insertPdfVersion, preparePdfVersion } from "./versions";
+import { PdfFormatError } from "@/lib/pdf/inspection";
+import { MAX_PDF_BYTES } from "@/lib/pdf/limits";
 import { fetchMetadata, OpenAlexError, parseIdentifier, type PaperMetadata } from "./openalex";
-
-const MAX_PDF_BYTES = 60 * 1024 * 1024;
 
 export class ImportError extends Error {
   constructor(
@@ -15,21 +16,6 @@ export class ImportError extends Error {
   ) {
     super(message);
   }
-}
-
-/**
- * A text layer is what sentence-level anchoring depends on. Compressed content
- * streams make operator sniffing unreliable, so look for a font dictionary,
- * which only a text-bearing PDF carries.
- */
-export function detectTextLayer(bytes: Uint8Array): boolean {
-  const sample = bytes.subarray(0, Math.min(bytes.length, 512 * 1024));
-  const marker = [0x2f, 0x46, 0x6f, 0x6e, 0x74]; // "/Font"
-  let matched = 0;
-  for (let i = 0; i < sample.length && matched < marker.length; i++) {
-    matched = sample[i] === marker[matched] ? matched + 1 : sample[i] === marker[0] ? 1 : 0;
-  }
-  return matched === marker.length;
 }
 
 async function downloadPdf(url: string): Promise<Uint8Array> {
@@ -56,7 +42,7 @@ async function downloadPdf(url: string): Promise<Uint8Array> {
   if (buffer.byteLength > MAX_PDF_BYTES) {
     throw new ImportError("PDF 超过 60MB 限制", "PDF_TOO_LARGE", 413);
   }
-  if (buffer.byteLength < 1024) {
+  if (new TextDecoder().decode(buffer.subarray(0, 5)) !== "%PDF-") {
     throw new ImportError("下载内容不是有效 PDF", "PDF_INVALID", 502);
   }
   return buffer;
@@ -131,7 +117,7 @@ async function fetchPdfForCandidates(
  */
 export async function importFromIdentifier(
   identifier: string,
-  uploadedBy: string | null,
+  uploadedBy: string,
 ): Promise<ImportResult> {
   const parsed = parseIdentifier(identifier);
   if (!parsed) {
@@ -159,22 +145,9 @@ export async function importFromIdentifier(
     throw new ImportError("论文元数据获取失败", "METADATA_FETCH_FAILED", 502);
   }
 
-  const paperId = crypto.randomUUID();
-  const downloaded = await fetchPdfForCandidates(metadata.pdfCandidates);
-  const failed = "error" in downloaded;
-
-  let pdfPath: string | null = null;
-  let hasTextLayer = true;
-  if (!failed) {
-    pdfPath = `${paperId}.pdf`;
-    await storage.put(pdfPath, downloaded.bytes);
-    hasTextLayer = detectTextLayer(downloaded.bytes);
-  }
-
   const [created] = await db
     .insert(papers)
     .values({
-      id: paperId,
       source: metadata.source,
       externalId: metadata.externalId,
       doi: metadata.doi,
@@ -183,21 +156,16 @@ export async function importFromIdentifier(
       authors: metadata.authors,
       year: metadata.year,
       venue: metadata.venue,
-      pdfPath,
-      // The first candidate is what the retry button will try again, and it is
-      // labelled as unverified while no copy is cached. When nothing was found,
-      // the column stays null and the page says so.
-      pdfUrl: failed ? (metadata.pdfCandidates[0] ?? null) : downloaded.url,
-      pdfFetchError: failed ? downloaded.error.code : null,
-      pdfCheckedAt: new Date(),
+      pdfUrl: metadata.pdfCandidates[0] ?? null,
       license: metadata.license,
       visibility: "public",
       uploadedBy,
-      hasTextLayer,
     })
     .returning();
 
-  return result(created, true);
+
+  const attached = await attachRemotePdf(created.id, uploadedBy, metadata.pdfCandidates);
+  return { ...attached, created: true };
 }
 
 /**
@@ -205,97 +173,85 @@ export async function importFromIdentifier(
  * candidate list is rebuilt from the stored metadata rather than trusted from
  * the request, so a retry cannot be pointed at an arbitrary URL.
  */
-export async function attachRemotePdf(paperId: string, viewerId: string): Promise<ImportResult> {
+export async function attachRemotePdf(
+  paperId: string, viewerId: string, initialCandidates: readonly string[] = [],
+): Promise<ImportResult> {
   const paper = await getReadablePaper(paperId, viewerId);
   if (!paper) throw new ImportError("论文不存在", "NOT_FOUND", 404);
   if (paper.pdfPath) return result(paper, false);
 
-  const candidates: string[] = [];
-  if (paper.source === "arxiv" && paper.externalId) {
-    candidates.push(`https://arxiv.org/pdf/${paper.externalId.replace(/v\d+$/i, "")}`);
-  }
+  const candidates = [...initialCandidates];
+  if (paper.source === "arxiv" && paper.externalId) candidates.push("https://arxiv.org/pdf/" + paper.externalId);
   if (paper.pdfUrl) candidates.push(paper.pdfUrl);
-
   const downloaded = await fetchPdfForCandidates(Array.from(new Set(candidates)));
-  const now = new Date();
-  const writable = and(eq(papers.id, paperId), readablePapers(viewerId), isNull(papers.pdfPath));
 
+  let failure: string;
   if ("error" in downloaded) {
-    const [updated] = await db
-      .update(papers)
-      .set({ pdfFetchError: downloaded.error.code, pdfCheckedAt: now })
-      .where(writable)
-      .returning();
-    const latest = updated ?? await getReadablePaper(paperId, viewerId);
-    if (!latest) throw new ImportError("论文不可用", "NOT_FOUND", 404);
-    return result(latest, false);
+    failure = downloaded.error.code;
+  } else {
+    try {
+      const updated = await attachPdfVersion(paperId, viewerId, downloaded.bytes, downloaded.url, paper.source);
+      const latest = updated ?? await getReadablePaper(paperId, viewerId);
+      if (!latest) throw new ImportError("论文不可用", "NOT_FOUND", 404);
+      return result(latest, false);
+    } catch (error) {
+      if (!(error instanceof PdfFormatError)) throw error;
+      failure = error.code;
+    }
   }
 
-  const pdfPath = paperId + "-" + crypto.randomUUID() + ".pdf";
-  await storage.put(pdfPath, downloaded.bytes);
-  const [updated] = await db
-    .update(papers)
-    .set({
-      pdfPath,
-      pdfUrl: downloaded.url,
-      pdfFetchError: null,
-      pdfCheckedAt: now,
-      hasTextLayer: detectTextLayer(downloaded.bytes),
-    })
-    .where(writable)
-    .returning();
-  if (!updated) {
-    await storage.delete(pdfPath);
-    const latest = await getReadablePaper(paperId, viewerId);
-    if (!latest) throw new ImportError("论文不可用", "NOT_FOUND", 404);
-    return result(latest, false);
-  }
-  return result(updated, false);
+  const [updated] = await db.update(papers)
+    .set({ pdfFetchError: failure, pdfCheckedAt: new Date() })
+    .where(and(eq(papers.id, paperId), readablePapers(viewerId), isNull(papers.pdfPath))).returning();
+  const latest = updated ?? await getReadablePaper(paperId, viewerId);
+  if (!latest) throw new ImportError("论文不可用", "NOT_FOUND", 404);
+  return result(latest, false);
 }
 
 export async function importFromUpload(
   file: File,
   uploadedBy: string,
-  meta: { title?: string; authors?: string; year?: number | null; visibility: "public" | "private" },
+  meta: { title?: string; authors?: string; year?: number | null; visibility: "public" | "private"; rightsClaimed: boolean },
 ): Promise<Paper> {
-  if (!file.name.toLowerCase().endsWith(".pdf")) {
-    throw new ImportError("只接受 PDF 文件", "NOT_PDF");
+  if (!file.name.toLowerCase().endsWith(".pdf") ||
+      !["", "application/pdf", "application/octet-stream"].includes(file.type.toLowerCase())) {
+    throw new ImportError("请上传 PDF 文件", "NOT_PDF", 415);
   }
-  if (file.size > MAX_PDF_BYTES) {
-    throw new ImportError("PDF 超过 60MB 限制", "PDF_TOO_LARGE", 413);
-  }
-
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const head = new TextDecoder().decode(bytes.subarray(0, 5));
-  if (head !== "%PDF-") {
-    throw new ImportError("文件内容不是有效 PDF", "PDF_INVALID");
+  if (file.size > MAX_PDF_BYTES) throw new ImportError("PDF 超过 60 MiB 上限", "PDF_TOO_LARGE", 413);
+  if (meta.visibility === "public" && !meta.rightsClaimed) {
+    throw new ImportError("请先确认你拥有此文件的公开分发权利", "RIGHTS_REQUIRED", 422);
   }
 
   const paperId = crypto.randomUUID();
-  const pdfPath = `${paperId}.pdf`;
-  await storage.put(pdfPath, bytes);
+  let version;
+  try {
+    version = await preparePdfVersion(paperId, new Uint8Array(await file.arrayBuffer()));
+  } catch (error) {
+    if (error instanceof PdfFormatError) throw new ImportError(error.message, error.code, error.status);
+    throw error;
+  }
 
-  const [created] = await db
-    .insert(papers)
-    .values({
-      id: paperId,
-      source: "upload",
-      externalId: null,
-      title: meta.title?.trim() || file.name.replace(/\.pdf$/i, ""),
-      abstract: null,
-      authors: meta.authors
-        ? meta.authors.split(",").map((a) => a.trim()).filter(Boolean)
-        : [],
-      year: meta.year ?? null,
-      pdfPath,
-      pdfUrl: null,
-      pdfFetchError: null,
-      pdfCheckedAt: null,
-      visibility: meta.visibility,
-      uploadedBy,
-      hasTextLayer: detectTextLayer(bytes),
-    })
-    .returning();
-
-  return created;
+  try {
+    return await db.transaction(async (tx) => {
+      await tx.insert(papers).values({
+        id: paperId, source: "upload",
+        title: meta.title?.trim() || file.name.replace(/\.pdf$/i, ""),
+        authors: meta.authors?.split(",").map((name) => name.trim()).filter(Boolean) ?? [],
+        year: meta.year ?? null, pdfPath: version.pdfKey, visibility: meta.visibility,
+        uploadedBy, hasTextLayer: version.hasTextLayer,
+      });
+      await insertPdfVersion(tx, paperId, version, {
+        sourceType: "upload",
+        rights: meta.visibility === "public" ? {
+          actorId: uploadedBy, statementVersion: 1, confirmedAt: new Date().toISOString(),
+        } : undefined,
+      });
+      const [paper] = await tx.update(papers).set({ defaultVersionId: version.id })
+        .where(eq(papers.id, paperId)).returning();
+      return paper;
+    });
+  } catch (error) {
+    await storage.delete(version.pdfKey).catch(() => {});
+    throw error;
+  }
 }

@@ -3,10 +3,21 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { comments } from "@/db/schema";
 import { currentUser } from "@/lib/session";
-import { errorFromUnknown, jsonError } from "@/lib/api";
-import { getComment, recountComment } from "@/lib/comments/queries";
+import { errorFromUnknown, jsonError, PRIVATE_RESPONSE_HEADERS } from "@/lib/api";
+import { getComment, getVisibleCommentDTO, recountComment } from "@/lib/comments/queries";
 import { canModerate } from "@/lib/papers/access";
 import { broadcastCommentCounts } from "@/lib/comments/broadcast";
+
+export async function GET(_request: Request, ctx: { params: Promise<{ id: string }> }) {
+  try {
+    const id = Number((await ctx.params).id);
+    if (!Number.isSafeInteger(id) || id < 1) return jsonError("INVALID_INPUT", 400);
+    const comment = await getVisibleCommentDTO(id, (await currentUser())?.id ?? null);
+    return comment ? Response.json({ comment }, { headers: PRIVATE_RESPONSE_HEADERS }) : jsonError("NOT_FOUND", 404);
+  } catch (error) {
+    return errorFromUnknown(error);
+  }
+}
 
 export async function DELETE(_request: Request, ctx: { params: Promise<{ id: string }> }) {
   try {

@@ -26,6 +26,7 @@ export async function POST(_request: Request, ctx: { params: Promise<{ id: strin
     if (!comment || comment.status !== "visible") return jsonError("NOT_FOUND", 404);
     if (!user) return jsonError("UNAUTHORIZED", 401, "请先登录");
     if (!canInteract(user)) return jsonError("EMAIL_UNVERIFIED", 403, "验证邮箱后即可点赞");
+    if (comment.userId === user.id) return jsonError("SELF_LIKE", 403, "不能点赞自己的评论");
 
     const inserted = await db
       .insert(commentLikes)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ANONYMOUS_LABEL, KIND_LABELS, type CommentDTO } from "@/lib/comments/types";
 
 const REPORT_REASONS = [
@@ -16,6 +16,7 @@ export function CommentCard({
   paperId,
   currentUserId,
   isReply = false,
+  inOverlay = false,
   onChanged,
   onJump,
 }: {
@@ -23,6 +24,7 @@ export function CommentCard({
   paperId: string;
   currentUserId: string | null;
   isReply?: boolean;
+  inOverlay?: boolean;
   onChanged: () => void;
   onJump?: (comment: CommentDTO) => void;
 }) {
@@ -34,6 +36,20 @@ export function CommentCard({
   const [notice, setNotice] = useState<string | null>(null);
 
   const isMine = comment.viewer.isMine;
+  const replyRequest = useRef<{ content: string; key: string } | null>(null);
+
+  async function share() {
+    const url = new URL("/read/" + paperId, window.location.origin);
+    if (comment.paperVersionId) url.searchParams.set("version", comment.paperVersionId);
+    if (comment.anchor?.type !== "paper") url.searchParams.set("page", String(comment.page));
+    url.searchParams.set("comment", String(comment.id));
+    try {
+      await navigator.clipboard.writeText(url.href);
+      setNotice("已复制讨论链接");
+    } catch {
+      setNotice("无法复制链接，可以通过地址栏分享当前阅读页。");
+    }
+  }
 
   async function toggleLike() {
     setBusy(true);
@@ -46,7 +62,8 @@ export function CommentCard({
       return;
     }
     if (!response.ok) {
-      setNotice("操作失败");
+      const error = await response.json().catch(() => ({}));
+      setNotice(error.detail ?? "点赞失败，请重试");
       return;
     }
     onChanged();
@@ -54,39 +71,33 @@ export function CommentCard({
 
   async function submitReply() {
     const content = replyText.trim();
-    if (!content) return;
+    if (!content || busy) return;
+    if (replyRequest.current?.content !== content) replyRequest.current = { content, key: crypto.randomUUID() };
     setBusy(true);
-    const response = await fetch(`/api/papers/${paperId}/comments`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        content,
-        kind: comment.kind,
-        parentId: comment.id,
-        displayMode: comment.displayMode,
-        anchor: {
-          page: comment.page,
-          yNorm: comment.yNorm,
-          xNorm: comment.xNorm,
-          quote: comment.quote,
-          quotePrefix: comment.quotePrefix,
-          quoteSuffix: comment.quoteSuffix,
-          charStart: comment.charStart,
-          charEnd: comment.charEnd,
-          blockId: comment.blockId,
-        },
-      }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    setBusy(false);
-    if (!response.ok) {
-      setNotice(payload.detail ?? "回复失败");
-      return;
+    try {
+      const response = await fetch("/api/papers/" + paperId + "/comments", {
+        method: "POST",
+        headers: { "content-type": "application/json", "Idempotency-Key": replyRequest.current.key },
+        body: JSON.stringify({
+          content, kind: comment.kind, parentId: comment.id,
+          anchor: comment.anchor ?? { page: comment.page, yNorm: comment.yNorm },
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setNotice(payload.detail ?? "回复失败");
+        return;
+      }
+      replyRequest.current = null;
+      setReplyText("");
+      setReplying(false);
+      setNotice(null);
+      onChanged();
+    } catch {
+      setNotice("连接暂时中断，回复已保留，可以重试。");
+    } finally {
+      setBusy(false);
     }
-    setReplyText("");
-    setReplying(false);
-    setNotice(null);
-    onChanged();
   }
 
   async function submitReport() {
@@ -115,7 +126,7 @@ export function CommentCard({
 
   return (
     <article
-      id={`c${comment.id}`}
+      id={inOverlay ? undefined : `c${comment.id}`}
       className={`rounded-lg border border-[var(--paper-line)] bg-[var(--paper-surface)] p-3 ${isReply ? "ml-6" : ""}`}
     >
       <div className="flex items-center gap-2 text-xs text-[var(--paper-muted)]">
@@ -125,8 +136,10 @@ export function CommentCard({
         <span className="rounded-full border border-[var(--paper-line)] px-1.5">
           {KIND_LABELS[comment.kind] ?? comment.kind}
         </span>
-        <span>第 {comment.page} 页</span>
-        {comment.anchorDegraded ? <span title="未绑定文本，仅按页面位置定位">页面级</span> : null}
+        <span>{comment.anchor?.type === "paper" ? "全文" : "第 " + comment.page + " 页"}</span>
+        {comment.anchor?.type === "region" ? <span>区域</span> : null}
+        {comment.anchorDegraded && comment.anchor?.type !== "paper"
+          ? <span title="已保留页码。打开该页后可查看旧版定位线索。">页码定位</span> : null}
         <span className="ml-auto">
           {new Date(comment.createdAt).toLocaleString("zh-CN", { hour12: false })}
         </span>
@@ -146,7 +159,12 @@ export function CommentCard({
       <p className="mt-2 text-sm leading-6 whitespace-pre-wrap">{comment.content}</p>
 
       <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--paper-muted)]">
-        <button type="button" disabled={busy} onClick={toggleLike} className="hover:text-[var(--paper-accent)]">
+        {comment.anchor?.type !== "paper" && !comment.quote ? (
+          <button type="button" onClick={() => onJump?.(comment)} className="underline">定位原文</button>
+        ) : null}
+        <button type="button" onClick={() => void share()} className="underline">复制链接</button>
+        <button type="button" disabled={busy || (isMine && !comment.likedByMe)} onClick={toggleLike}
+          title={isMine && !comment.likedByMe ? "不能点赞自己的评论" : undefined} className="hover:text-[var(--paper-accent)]">
           {comment.likedByMe ? "♥" : "♡"} {comment.likeCount}
         </button>
         {!isReply ? (

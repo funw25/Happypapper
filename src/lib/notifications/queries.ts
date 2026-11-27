@@ -36,8 +36,8 @@ export async function notifyReply(input: {
   commentId: number;
   paperId: string;
   actorId: string;
-}): Promise<boolean> {
-  const [parent] = await db
+}, conn = db): Promise<boolean> {
+  const [parent] = await conn
     .select({ userId: comments.userId })
     .from(comments)
     .where(eq(comments.id, input.parentId))
@@ -45,7 +45,7 @@ export async function notifyReply(input: {
 
   if (!parent?.userId || parent.userId === input.actorId) return false;
 
-  await db.insert(notifications).values({
+  await conn.insert(notifications).values({
     userId: parent.userId,
     commentId: input.commentId,
     paperId: input.paperId,

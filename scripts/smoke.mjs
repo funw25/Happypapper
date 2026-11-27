@@ -180,12 +180,12 @@ check(
 );
 
 const likeResponse = await reader.call(`/api/comments/${comment.id}/like`, { method: "POST" });
-check("点赞成功", likeResponse.ok, `status ${likeResponse.status}`);
+check("拒绝给自己的评论点赞", likeResponse.status === 403, `status ${likeResponse.status}`);
 const afterLike = await json(await reader.call(`/api/papers/${paper.id}/comments?page=4`));
 check(
-  "点赞数被重算",
-  afterLike.roots?.find((c) => c.id === comment.id)?.likeCount === 1 &&
-    afterLike.roots?.find((c) => c.id === comment.id)?.likedByMe === true,
+  "拒绝自赞后点赞数和个人状态保持原值",
+  afterLike.roots?.find((c) => c.id === comment.id)?.likeCount === 0 &&
+    afterLike.roots?.find((c) => c.id === comment.id)?.likedByMe === false,
   `likeCount=${afterLike.roots?.find((c) => c.id === comment.id)?.likeCount}`,
 );
 

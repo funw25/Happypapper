@@ -18,17 +18,18 @@ function pageContent(page) {
   }).join("\n");
 }
 
-function createPdf() {
+function createPdf({ count = 5, rotation = 0, crop = "", imageOnly = false } = {}) {
+  const kids = Array.from({ length: count }, (_, index) => (4 + index * 2) + " 0 R").join(" ");
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
-    "<< /Type /Pages /Kids [ 4 0 R 6 0 R 8 0 R 10 0 R 12 0 R ] /Count 5 >>",
+    "<< /Type /Pages /Kids [ " + kids + " ] /Count " + count + " >>",
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
   ];
-  for (let page = 1; page <= 5; page++) {
+  for (let page = 1; page <= count; page++) {
     const contentsId = objects.length + 2;
-    const stream = pageContent(page);
+    const stream = imageOnly ? "0.15 g 60 140 492 500 re f 0.8 g 100 180 410 40 re f" : pageContent(page);
     objects.push(
-      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents " + contentsId + " 0 R >>",
+      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] " + crop + " /Rotate " + rotation + " /Resources << /Font << /F1 3 0 R >> >> /Contents " + contentsId + " 0 R >>",
       "<< /Length " + Buffer.byteLength(stream) + " >>\nstream\n" + stream + "\nendstream",
     );
   }
@@ -48,3 +49,5 @@ function createPdf() {
 }
 
 await writeFile(new URL("./F01-reading-notes.pdf", import.meta.url), createPdf());
+await writeFile(new URL("./F06-rotated.pdf", import.meta.url), createPdf({ count: 2, rotation: 90, crop: "/CropBox [30 40 560 760]" }));
+await writeFile(new URL("./F08-image-only.pdf", import.meta.url), createPdf({ count: 1, imageOnly: true }));

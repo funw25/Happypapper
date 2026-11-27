@@ -71,7 +71,7 @@ export default async function UserPage({ params }: { params: Promise<{ name: str
                     {KIND_LABELS[comment.kind] ?? comment.kind}
                   </span>
                   <Link
-                    href={`/read/${comment.paperId}?page=${comment.page}#c${comment.id}`}
+                    href={`/read/${comment.paperId}?page=${comment.page}&comment=${comment.id}`}
                     className="ml-2 hover:underline"
                   >
                     {comment.paperTitle} · 第 {comment.page} 页

@@ -145,6 +145,7 @@ check(
 );
 
 // ---- degraded cases -----------------------------------------------------
+check("重复句缺少消歧上下文时回退到已有页内位置", findQuote(twiceIndex, sentence) === null);
 check("空引用返回未命中而不是抛错", findQuote(index, "", null, null) === null);
 check("不存在的引用返回未命中", findQuote(index, "zzzz-not-in-this-document-qqqq", null, null) === null);
 

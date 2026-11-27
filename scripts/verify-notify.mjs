@@ -267,8 +267,8 @@ const selfLike = await replier.call(`/api/comments/${reply.id}/like`, { method: 
 const replierInbox = await (await replier.call("/api/me/notifications")).json();
 const selfLiked = (replierInbox.items ?? []).filter((item) => item.commentId === reply.id);
 check(
-  "点赞自己的评论不产生通知",
-  selfLike.status === 200 && selfLiked.length === 0,
+  "拒绝给自己的评论点赞且不产生通知",
+  selfLike.status === 403 && selfLiked.length === 0,
   `status ${selfLike.status}, 自身评论通知 ${selfLiked.length} 条`,
 );
 

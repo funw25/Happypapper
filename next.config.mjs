@@ -17,7 +17,7 @@ const nextConfig = {
   // `pg` is external for the same reason: it loads native/optional modules and
   // opens sockets, so a bundled copy is not what should run in production.
   // The S3 client is external for that reason too.
-  serverExternalPackages: ["@electric-sql/pglite", "pg", "@aws-sdk/client-s3"],
+  serverExternalPackages: ["@electric-sql/pglite", "pg", "@aws-sdk/client-s3", "pdfjs-dist"],
 };
 
 export default nextConfig;

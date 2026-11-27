@@ -107,9 +107,11 @@ npm run verify:search-ui      # 4 项，检索表单防抖与结果渲染，需�
 npm run verify:github         # 14 项，GitHub 登录接线与首登昵称规则；无凭据时 9 项通过并退出码 2（表示待定）
 npm run verify:github-schema  # 6 项，OAuth 首登要写的表结构；需要先停掉开发服务器
 npm run verify:account        # 31 至 36 项，邮箱验证、修改邮箱、密码找回与解绑保护，需要开发服务器
-npm run verify:anchor         # 12 项，独立运行，读取固定测试 PDF
+npm run verify:anchor         # 13 项，独立运行，读取固定测试 PDF
 npm run verify:access         # 本机隔离数据库、固定 PDF、真实 HTTP/SSE 权限回归
 npm run verify:reader         # 15 项，需要开发服务器 + 本机 Chrome/Edge
+npm run verify:reader-v1      # 27 项，自行启动隔离服务，需要本机 Chrome/Edge
+npm run verify:danmaku        # 全文弹幕的 API 与 Chrome/Edge 回归，自行启动隔离服务
 npm run verify:settings       # 27 项，个人资料、密码、隐私设置与评论署名联动，需要开发服务器
 npm run verify:theme          # 8 项，三态主题与深色令牌，需要开发服务器 + 本机 Chrome/Edge
 npm run typecheck             # tsc --noEmit

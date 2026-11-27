@@ -1,3 +1,5 @@
+import type { AnchorV2 } from "@/lib/anchor-v2";
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   uuid,
@@ -97,6 +99,7 @@ export const papers = pgTable(
     license: text("license"),
     visibility: text("visibility").notNull().default("public"),
     status: text("status").notNull().default("active"),
+    defaultVersionId: uuid("default_version_id"),
     uploadedBy: uuid("uploaded_by").references(() => users.id, { onDelete: "set null" }),
     hasTextLayer: boolean("has_text_layer").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -107,6 +110,41 @@ export const papers = pgTable(
     index("papers_external_idx").on(t.source, t.externalId),
   ],
 );
+
+export const paperVersions = pgTable("paper_versions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  paperId: uuid("paper_id").notNull().references(() => papers.id, { onDelete: "cascade" }),
+  versionLabel: text("version_label").notNull(),
+  sourceType: text("source_type").notNull(),
+  sourceUrl: text("source_url"),
+  pdfKey: text("pdf_key").notNull(),
+  sha256: text("sha256"),
+  pageCount: integer("page_count"),
+  processingState: text("processing_state").notNull(),
+  parserVersion: text("parser_version"),
+  rightsConfirmation: jsonb("rights_confirmation").$type<{ actorId: string; confirmedAt: string; statementVersion: number }>(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const paperPages = pgTable("paper_pages", {
+  versionId: uuid("version_id").notNull().references(() => paperVersions.id, { onDelete: "cascade" }),
+  page: integer("page").notNull(),
+  width: real("width").notNull(),
+  height: real("height").notNull(),
+  rotation: smallint("rotation").notNull(),
+  textStatus: text("text_status").notNull(),
+  normalizedText: text("normalized_text").notNull(),
+}, (t) => [primaryKey({ columns: [t.versionId, t.page] })]);
+
+export const readingProgressByVersion = pgTable("reading_progress_by_version", {
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  paperId: uuid("paper_id").notNull().references(() => papers.id, { onDelete: "cascade" }),
+  versionId: uuid("version_id").notNull(),
+  page: integer("page").notNull(),
+  yNorm: real("y_norm").notNull(),
+  progress: real("progress").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.userId, t.paperId, t.versionId] })]);
 
 export const comments = pgTable(
   "comments",
@@ -131,11 +169,16 @@ export const comments = pgTable(
     charEnd: integer("char_end"),
     blockId: text("block_id"),
     anchorVersion: smallint("anchor_version").notNull().default(1),
+    paperVersionId: uuid("paper_version_id"),
+    anchorV2: jsonb("anchor_v2").$type<AnchorV2>(),
     anchorDegraded: boolean("anchor_degraded").notNull().default(false),
     displayMode: text("display_mode").notNull().default("position"),
     isAnonymous: boolean("is_anonymous").notNull().default(false),
     visibleInProfile: boolean("visible_in_profile").notNull().default(true),
     visibleInDanmaku: boolean("visible_in_danmaku").notNull().default(true),
+    danmakuText: text("danmaku_text"),
+    clientRequestId: uuid("client_request_id"),
+    requestHash: text("request_hash"),
     status: text("status").notNull().default("visible"),
     likeCount: integer("like_count").notNull().default(0),
     replyCount: integer("reply_count").notNull().default(0),
@@ -144,6 +187,8 @@ export const comments = pgTable(
   (t) => [
     index("comments_paper_page_idx").on(t.paperId, t.page, t.yNorm),
     index("comments_paper_created_idx").on(t.paperId, t.createdAt),
+    index("comments_danmaku_latest_idx").on(t.paperId, t.createdAt.desc(), t.id.desc())
+      .where(sql`${t.status} = 'visible' and ${t.parentId} is null and ${t.visibleInDanmaku}`),
     index("comments_parent_idx").on(t.parentId),
     index("comments_user_visible_idx").on(t.userId, t.visibleInProfile, t.createdAt),
   ],
@@ -160,7 +205,7 @@ export const commentLikes = pgTable(
       .references(() => comments.id, { onDelete: "cascade" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.userId, t.commentId] })],
+  (t) => [primaryKey({ columns: [t.userId, t.commentId] }), index("comment_likes_comment_idx").on(t.commentId)],
 );
 
 export const reports = pgTable(

@@ -67,7 +67,7 @@ export default async function HomePage() {
                 {recent.map((comment) => (
                   <li key={comment.id} className="hp-card p-3 text-sm">
                     <Link
-                      href={`/read/${comment.paperId}?page=${comment.page}#c${comment.id}`}
+                      href={`/read/${comment.paperId}?page=${comment.page}&comment=${comment.id}`}
                       className="line-clamp-2 hover:underline"
                     >
                       {comment.content}

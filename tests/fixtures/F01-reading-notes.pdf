@@ -9,7 +9,7 @@ endobj
 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
 endobj
 4 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]  /Rotate 0 /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>
 endobj
 5 0 obj
 << /Length 6199 >>
@@ -72,7 +72,7 @@ BT /F1 10 Tf 56 42 Td (Page 1, note 55: The purpose of an annotation is to recov
 endstream
 endobj
 6 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 7 0 R >>
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]  /Rotate 0 /Resources << /Font << /F1 3 0 R >> >> /Contents 7 0 R >>
 endobj
 7 0 obj
 << /Length 6191 >>
@@ -135,7 +135,7 @@ BT /F1 10 Tf 56 42 Td (Page 2, note 55: A claim is useful when a reader can insp
 endstream
 endobj
 8 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 9 0 R >>
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]  /Rotate 0 /Resources << /Font << /F1 3 0 R >> >> /Contents 9 0 R >>
 endobj
 9 0 obj
 << /Length 6189 >>
@@ -198,7 +198,7 @@ BT /F1 10 Tf 56 42 Td (Page 3, note 55: A margin note can point to the sentence 
 endstream
 endobj
 10 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 11 0 R >>
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]  /Rotate 0 /Resources << /Font << /F1 3 0 R >> >> /Contents 11 0 R >>
 endobj
 11 0 obj
 << /Length 6194 >>
@@ -261,7 +261,7 @@ BT /F1 10 Tf 56 42 Td (Page 4, note 55: Reliable experiments use fixed inputs an
 endstream
 endobj
 12 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 13 0 R >>
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]  /Rotate 0 /Resources << /Font << /F1 3 0 R >> >> /Contents 13 0 R >>
 endobj
 13 0 obj
 << /Length 6183 >>
@@ -330,17 +330,17 @@ xref
 0000000058 00000 n 
 0000000143 00000 n 
 0000000213 00000 n 
-0000000339 00000 n 
-0000006590 00000 n 
-0000006716 00000 n 
-0000012959 00000 n 
-0000013085 00000 n 
-0000019326 00000 n 
-0000019454 00000 n 
-0000025701 00000 n 
-0000025829 00000 n 
+0000000350 00000 n 
+0000006601 00000 n 
+0000006738 00000 n 
+0000012981 00000 n 
+0000013118 00000 n 
+0000019359 00000 n 
+0000019498 00000 n 
+0000025745 00000 n 
+0000025884 00000 n 
 trailer
 << /Size 14 /Root 1 0 R >>
 startxref
-32065
+32120
 %%EOF

@@ -1,3 +1,5 @@
+import type { AnchorV2 } from "@/lib/anchor-v2";
+
 /**
  * Shape of a comment as it crosses the wire. Kept free of server imports so
  * client components can use it without pulling Drizzle into the bundle.
@@ -17,6 +19,9 @@ export type CommentDTO = {
   charEnd: number | null;
   blockId: string | null;
   anchorDegraded: boolean;
+  anchor: AnchorV2 | null;
+  paperVersionId: string | null;
+  danmakuText: string | null;
   displayMode: string;
   likeCount: number;
   replyCount: number;

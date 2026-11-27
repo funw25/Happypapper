@@ -27,11 +27,12 @@ async function run(script, env) {
   if (code !== 0) throw new Error(script + " exited with " + code);
 }
 
-export async function withVerificationRuntime(verify) {
+export async function withVerificationRuntime(verify, { seed } = {}) {
   const dir = await mkdtemp(join(tmpdir(), "happypaper-v1-"));
   await mkdir(resolve(".verify"), { recursive: true });
-  const nextDir = await mkdtemp(resolve(".verify", "next-"));
-  const tsconfig = "tsconfig.happypaper-test-" + basename(nextDir) + ".json";
+  const existingBuild = process.env.HAPPYPAPER_TEST_NEXT_BUILD;
+  const nextDir = existingBuild ? resolve(existingBuild) : await mkdtemp(resolve(".verify", "next-"));
+  const tsconfig = existingBuild ? null : "tsconfig.happypaper-test-" + basename(nextDir) + ".json";
   const port = await getPort();
   const base = "http://127.0.0.1:" + port;
   const env = {
@@ -45,7 +46,7 @@ export async function withVerificationRuntime(verify) {
     APP_URL: base,
     AUTH_SECRET: randomBytes(32).toString("hex"),
     HAPPYPAPER_NEXT_DIST_DIR: relative(process.cwd(), nextDir).replaceAll("\\", "/"),
-    HAPPYPAPER_NEXT_TSCONFIG: tsconfig,
+    HAPPYPAPER_NEXT_TSCONFIG: tsconfig ?? "tsconfig.json",
     AUTH_GITHUB_ID: "",
     AUTH_GITHUB_SECRET: "",
     SMTP_URL: "",
@@ -72,13 +73,14 @@ export async function withVerificationRuntime(verify) {
       );
       actors[name] = { email, password, name };
     }
+    await seed?.(client, env.STORAGE_DIR);
   } finally {
     await client.close();
   }
 
-  await writeFile(tsconfig, await readFile("tsconfig.json"), { flag: "wx" });
+  if (tsconfig) await writeFile(tsconfig, await readFile("tsconfig.json"), { flag: "wx" });
   const server = spawn(process.execPath, [
-    "node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", String(port),
+    "node_modules/next/dist/bin/next", existingBuild ? "start" : "dev", "--hostname", "127.0.0.1", "--port", String(port),
   ], { env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   let logs = "";
   for (const stream of [server.stdout, server.stderr]) {
@@ -116,6 +118,6 @@ export async function withVerificationRuntime(verify) {
     server.stdout.destroy();
     server.stderr.destroy();
     server.unref();
-    await rm(tsconfig, { force: true });
+    if (tsconfig) await rm(tsconfig, { force: true });
   }
 }

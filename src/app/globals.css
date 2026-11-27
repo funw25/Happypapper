@@ -341,42 +341,16 @@ body {
   background: var(--paper-accent-soft);
 }
 
-@keyframes hp-danmaku-drift {
-  0% {
-    transform: translateX(0);
-    opacity: 0;
-  }
-  6% {
-    opacity: 1;
-  }
-  88% {
-    opacity: 1;
-  }
-  100% {
-    transform: translateX(calc(-100vw - 100%));
-    opacity: 0;
-  }
-}
-
 .hp-danmaku {
   position: absolute;
-  left: 100%;
-  max-width: 420px;
+  left: 0;
+  max-width: 75%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 2px 10px;
+  padding: 1px 10px;
   border: 1px solid var(--paper-line);
   border-radius: 999px;
   background: var(--paper-danmaku-bg);
   color: var(--paper-fg);
-  opacity: 0;
-  animation: hp-danmaku-drift 12s linear forwards;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hp-danmaku {
-    animation-duration: 0.01ms;
-    animation-iteration-count: 1;
-  }
 }

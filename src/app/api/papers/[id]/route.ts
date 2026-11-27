@@ -4,8 +4,11 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { papers } from "@/db/schema";
 import { currentUser } from "@/lib/session";
-import { errorFromUnknown, jsonError } from "@/lib/api";
+import { errorFromUnknown, jsonError, PRIVATE_RESPONSE_HEADERS } from "@/lib/api";
 import { canManagePaper, getReadablePaper, readablePapers } from "@/lib/papers/access";
+
+import { listPaperVersions } from "@/lib/papers/versions";
+import { paperAvailability } from "@/lib/papers/availability";
 
 const bodySchema = z.object({
   tags: z.array(z.string().min(1).max(24)).max(8),
@@ -33,6 +36,28 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
 
     if (!updated) return jsonError("NOT_FOUND", 404);
     return NextResponse.json({ paper: updated });
+  } catch (error) {
+    return errorFromUnknown(error);
+  }
+}
+
+
+export async function GET(_request: Request, ctx: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await ctx.params;
+    const user = await currentUser();
+    const paper = await getReadablePaper(id, user?.id);
+    if (!paper) return jsonError("NOT_FOUND", 404);
+    return NextResponse.json({
+      data: {
+        id: paper.id, title: paper.title, authors: paper.authors, year: paper.year,
+        source: paper.source, doi: paper.doi, externalId: paper.externalId, tags: paper.tags,
+        defaultVersionId: paper.defaultVersionId, visibility: paper.visibility,
+        versions: await listPaperVersions(id),
+        availability: paperAvailability(paper),
+        viewer: { canManage: canManagePaper(paper, user) },
+      },
+    }, { headers: PRIVATE_RESPONSE_HEADERS });
   } catch (error) {
     return errorFromUnknown(error);
   }

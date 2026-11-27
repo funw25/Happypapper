@@ -88,6 +88,32 @@ function contextAfter(haystack: string, at: number, context: string): boolean {
   return haystack.slice(at, to).trimStart().startsWith(context);
 }
 
+/** Use adjacent context to resolve repeated quotes. A tie has no exact match. */
+export function uniqueQuoteOffset(
+  normalizedText: string,
+  needle: string,
+  prefix?: string | null,
+  suffix?: string | null,
+): number | null {
+  if (!needle) return null;
+
+  const before = normalizeForMatch(prefix ?? "");
+  const after = normalizeForMatch(suffix ?? "");
+  let chosen: number | null = null;
+  let best = -1;
+  for (let at = normalizedText.indexOf(needle); at !== -1; at = normalizedText.indexOf(needle, at + 1)) {
+    const score = Number(contextBefore(normalizedText, at, before)) +
+      Number(contextAfter(normalizedText, at + needle.length, after));
+    if (score > best) {
+      best = score;
+      chosen = at;
+    } else if (score === best) {
+      chosen = null;
+    }
+  }
+  return chosen;
+}
+
 /** Locate a stored quote inside the current rendering of the page. */
 export function findQuote(
   index: PageIndex,
@@ -96,37 +122,8 @@ export function findQuote(
   suffix?: string | null,
 ): QuoteHit | null {
   const needle = normalizeForMatch(quote ?? "");
-  if (!needle) return null;
-
-  const hits: number[] = [];
-  let from = 0;
-  for (;;) {
-    const at = index.normalized.indexOf(needle, from);
-    if (at === -1) break;
-    hits.push(at);
-    from = at + 1;
-    if (hits.length >= 32) break;
-  }
-  if (hits.length === 0) return null;
-
-  let chosen = hits[0];
-  if (hits.length > 1 && (prefix || suffix)) {
-    const before = normalizeForMatch(prefix ?? "");
-    const after = normalizeForMatch(suffix ?? "");
-    let best = -1;
-    for (const at of hits) {
-      let score = 0;
-      if (before && contextBefore(index.normalized, at, before)) score += 2;
-      const end = at + needle.length;
-      if (after && contextAfter(index.normalized, end, after)) score += 2;
-      if (score > best) {
-        best = score;
-        chosen = at;
-        if (score === 4) break;
-      }
-    }
-  }
-
+  const chosen = uniqueQuoteOffset(index.normalized, needle, prefix, suffix);
+  if (chosen === null) return null;
   const partIndex = partAtOffset(index, chosen);
   if (partIndex === null) return null;
   return { partIndex, offset: chosen, length: needle.length };

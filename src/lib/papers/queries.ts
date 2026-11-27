@@ -1,6 +1,6 @@
 import { and, desc, eq, ilike, or, sql, getTableColumns } from "drizzle-orm";
 import { db } from "@/db";
-import { comments, favorites, papers, readingProgress } from "@/db/schema";
+import { comments, favorites, papers, readingProgress, readingProgressByVersion } from "@/db/schema";
 import { isPaperId, readablePapers } from "./access";
 
 export type PaperListItem = Awaited<ReturnType<typeof listPapers>>[number];
@@ -93,8 +93,15 @@ export async function getFavorite(userId: string | null, paperId: string) {
   return rows.length > 0;
 }
 
-export async function getProgress(userId: string | null, paperId: string) {
+export async function getProgress(userId: string | null, paperId: string, versionId?: string | null) {
   if (!userId) return null;
+  if (versionId) {
+    const [row] = await db.select()
+      .from(readingProgressByVersion)
+      .where(and(eq(readingProgressByVersion.userId, userId), eq(readingProgressByVersion.paperId, paperId), eq(readingProgressByVersion.versionId, versionId)))
+      .limit(1);
+    return row ?? null;
+  }
   const [row] = await db
     .select()
     .from(readingProgress)

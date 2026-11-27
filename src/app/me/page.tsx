@@ -88,7 +88,7 @@ export default async function MePage({
                       {KIND_LABELS[comment.kind] ?? comment.kind}
                     </span>
                     <Link
-                      href={`/read/${comment.paperId}?page=${comment.page}#c${comment.id}`}
+                      href={`/read/${comment.paperId}?page=${comment.page}&comment=${comment.id}`}
                       className="ml-2 hover:underline"
                     >
                       {comment.paperTitle} · 第 {comment.page} 页
@@ -138,7 +138,7 @@ export default async function MePage({
                     </p>
                     <p className="mt-2 text-xs text-[var(--paper-muted)]">
                       <Link
-                        href={`/read/${item.paperId}?page=${item.page}#c${item.commentId}`}
+                        href={`/read/${item.paperId}?page=${item.page}&comment=${item.commentId}`}
                         className="hover:underline"
                       >
                         {item.paperTitle} · 第 {item.page} 页

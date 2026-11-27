@@ -32,7 +32,9 @@
     "verify:theme": "node scripts/verify-theme.mjs",
     "verify:reader": "node scripts/verify-reader.mjs",
     "pdf:worker": "node scripts/copy-pdf-worker.mjs",
-    "verify:access": "node scripts/verify-access.mjs"
+    "verify:access": "node scripts/verify-access.mjs",
+    "verify:reader-v1": "node scripts/verify-reader-v1.mjs",
+    "verify:danmaku": "node scripts/verify-danmaku.mjs"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.3",
