@@ -79,16 +79,19 @@ export async function withVerificationRuntime(verify, { seed } = {}) {
   }
 
   if (tsconfig) await writeFile(tsconfig, await readFile("tsconfig.json"), { flag: "wx" });
-  const server = spawn(process.execPath, [
-    "node_modules/next/dist/bin/next", existingBuild ? "start" : "dev", "--hostname", "127.0.0.1", "--port", String(port),
-  ], { env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   let logs = "";
-  for (const stream of [server.stdout, server.stderr]) {
-    stream.setEncoding("utf8");
-    stream.on("data", (text) => { logs = (logs + text).slice(-20_000); });
+  function startServer() {
+    const child = spawn(process.execPath, [
+      "node_modules/next/dist/bin/next", existingBuild ? "start" : "dev", "--hostname", "127.0.0.1", "--port", String(port),
+    ], { env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    for (const stream of [child.stdout, child.stderr]) {
+      stream.setEncoding("utf8");
+      stream.on("data", (text) => { logs = (logs + text).slice(-20_000); });
+    }
+    return child;
   }
-
-  try {
+  let server = startServer();
+  async function ready() {
     const expiry = Date.now() + 75_000;
     while (true) {
       if (server.exitCode !== null || Date.now() > expiry) throw new Error("Local test server did not start");
@@ -100,24 +103,34 @@ export async function withVerificationRuntime(verify, { seed } = {}) {
       }
       await delay(350);
     }
-    return await verify({ base, actors, logs: () => logs });
-  } catch (error) {
-    console.error(logs);
-    throw error;
-  } finally {
+  }
+  async function stopServer() {
     if (server.exitCode === null) {
       if (process.platform === "win32") {
         const stop = spawn("taskkill.exe", ["/PID", String(server.pid), "/T", "/F"], {
           windowsHide: true, stdio: "ignore",
         });
-        stop.unref();
         await Promise.race([once(stop, "exit"), delay(2_000)]).catch(() => {});
       }
       if (server.exitCode === null) server.kill();
+      await Promise.race([once(server, "exit"), delay(2_000)]).catch(() => {});
     }
     server.stdout.destroy();
     server.stderr.destroy();
     server.unref();
+  }
+  try {
+    await ready();
+    return await verify({ base, actors, logs: () => logs, restart: async () => {
+      await stopServer();
+      server = startServer();
+      await ready();
+    } });
+  } catch (error) {
+    console.error(logs);
+    throw error;
+  } finally {
+    await stopServer();
     if (tsconfig) await rm(tsconfig, { force: true });
   }
 }

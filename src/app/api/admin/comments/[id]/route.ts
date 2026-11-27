@@ -5,7 +5,6 @@ import { db } from "@/db";
 import { comments } from "@/db/schema";
 import { requireAdmin } from "@/lib/session";
 import { errorFromUnknown, jsonError } from "@/lib/api";
-import { broadcastCommentCounts } from "@/lib/comments/broadcast";
 import { recountComment } from "@/lib/comments/queries";
 import { lockComment } from "@/lib/comments/mutation";
 
@@ -23,14 +22,12 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
 
     const [comment] = await db.select({ paperId: comments.paperId }).from(comments).where(eq(comments.id, id)).limit(1);
     if (!comment) return jsonError("NOT_FOUND", 404);
-    const updated = await db.transaction(async (tx) => {
+    await db.transaction(async (tx) => {
       const locked = await lockComment(tx, comment.paperId, id, admin.id, true);
       await tx.update(comments).set({ status: parsed.data.status }).where(eq(comments.id, id));
       if (locked.parentId) await recountComment(locked.parentId, tx);
-      return locked;
     });
 
-    await broadcastCommentCounts(updated.paperId, id);
     return NextResponse.json({ ok: true, status: parsed.data.status });
   } catch (error) {
     return errorFromUnknown(error);

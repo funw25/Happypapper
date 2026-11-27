@@ -35,7 +35,9 @@
     "verify:access": "node scripts/verify-access.mjs",
     "verify:reader-v1": "node scripts/verify-reader-v1.mjs",
     "verify:danmaku": "node scripts/verify-danmaku.mjs",
-    "verify:comment-mutations": "node scripts/verify-comment-mutations.mjs"
+    "verify:comment-mutations": "node scripts/verify-comment-mutations.mjs",
+    "verify:realtime": "node scripts/verify-realtime.mjs",
+    "verify:discover": "node scripts/verify-discover.mjs"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.3",

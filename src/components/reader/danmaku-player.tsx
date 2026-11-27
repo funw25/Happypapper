@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { KIND_FILTERS, type CommentDTO } from "@/lib/comments/types";
 import type { DanmakuItem, DanmakuPage } from "@/lib/comments/danmaku-types";
-import type { RealtimeEvent } from "@/lib/realtime";
+import type { ReaderEvent } from "@/lib/realtime-types";
 import { CommentCard } from "./comment-card";
 
 const PAGE_SIZE = 40;
@@ -66,6 +66,7 @@ export function DanmakuPlayer({ paperId, versionId, versionLabel, page, ready, s
   const queue = useRef<Queue | null>(null);
   const playedByFilter = useRef(new Map<string, Set<string>>());
   const removed = useRef(new Set<string>());
+  const liveRequests = useRef(new Map<string, AbortController>());
   const activeRef = useRef<Active[]>([]);
   const previousOverlay = useRef("");
   const context = JSON.stringify([paperId, versionId, scope, scope === "page" ? page : null]);
@@ -129,7 +130,7 @@ export function DanmakuPlayer({ paperId, versionId, versionLabel, page, ready, s
     setTruncated(false);
     setFeedStatus("loading");
     return () => {
-      current.request?.abort();
+      queue.current?.request?.abort();
       queue.current = null;
     };
   }, [feedUrl, enabled, replay]);
@@ -238,23 +239,9 @@ export function DanmakuPlayer({ paperId, versionId, versionLabel, page, ready, s
     return () => clearInterval(timer);
   }, [enabled]);
 
-  const receive = useEffectEvent((message: RealtimeEvent) => {
+  const acceptComment = useEffectEvent((comment: CommentDTO) => {
     const current = queue.current;
     if (!current || current.url !== feedUrl) return;
-    if (message.type === "comment:update") {
-      const id = String(message.id);
-      if (message.status !== "visible") {
-        removed.current.add(id);
-        current.pending = current.pending.filter((item) => item.id !== id);
-        finish(id);
-        if (id === selected) setSelected(null);
-        updatePreview(current);
-      } else removed.current.delete(id);
-      if (mode === "hot") current.dirtyHot = true;
-      return;
-    }
-    if (message.type !== "comment:new") return;
-    const comment = message.comment;
     if (comment.parentId !== null) {
       if (mode === "hot") current.dirtyHot = true;
       return;
@@ -276,6 +263,47 @@ export function DanmakuPlayer({ paperId, versionId, versionLabel, page, ready, s
     setFeedStatus("ready");
   });
 
+  const receive = useEffectEvent((message: ReaderEvent) => {
+    if (message.type === "comment:new") { acceptComment(message.comment); return; }
+    const current = queue.current;
+    if (!current || current.url !== feedUrl || !message.commentId) return;
+    const id = message.commentId;
+    if (mode === "hot") current.dirtyHot = true;
+    if (message.type === "comment.removed") {
+      liveRequests.current.get(id)?.abort();
+      liveRequests.current.delete(id);
+      removed.current.add(id);
+      current.pending = current.pending.filter((item) => item.id !== id);
+      finish(id);
+      if (id === selected) { setSelected(null); setDetail(null); }
+      updatePreview(current);
+      return;
+    }
+    if (id === selected) setRefreshDetail((value) => value + 1);
+    if (message.type === "comment.metrics") return;
+    removed.current.delete(id);
+    liveRequests.current.get(id)?.abort();
+    const request = new AbortController();
+    liveRequests.current.set(id, request);
+    void fetch(`/api/comments/${id}`, { signal: request.signal }).then(async (response) => {
+      const comment: CommentDTO | null = response.ok ? (await response.json()).comment : null;
+      if (!comment || request.signal.aborted || queue.current !== current) return;
+      if (message.type === "comment.updated") {
+        current.pending = current.pending.filter((item) => item.id !== id);
+        finish(id);
+        updatePreview(current);
+      }
+      acceptComment(comment);
+    }).catch(() => {}).finally(() => {
+      if (liveRequests.current.get(id) === request) liveRequests.current.delete(id);
+    });
+  });
+
+  useEffect(() => () => {
+    for (const request of liveRequests.current.values()) request.abort();
+    liveRequests.current.clear();
+  }, []);
+
   const reconnect = useEffectEvent(() => {
     const current = queue.current;
     if (!current) return;
@@ -291,7 +319,7 @@ export function DanmakuPlayer({ paperId, versionId, versionLabel, page, ready, s
   });
 
   useEffect(() => {
-    const listener = (event: Event) => receive((event as CustomEvent<RealtimeEvent>).detail);
+    const listener = (event: Event) => receive((event as CustomEvent<ReaderEvent>).detail);
     const connected = () => reconnect();
     let accessCheck: AbortController | null = null;
     const recheckAccess = () => {

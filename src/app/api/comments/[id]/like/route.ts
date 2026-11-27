@@ -8,7 +8,6 @@ import { CommentError, getComment, recountComment } from "@/lib/comments/queries
 import { lockComment } from "@/lib/comments/mutation";
 import { canInteract } from "@/lib/papers/access";
 import { notifyLike, removeLikeNotification } from "@/lib/notifications/queries";
-import { broadcastCommentCounts } from "@/lib/comments/broadcast";
 import { sql } from "drizzle-orm";
 
 async function resolveId(ctx: { params: Promise<{ id: string }> }) {
@@ -52,7 +51,6 @@ export async function POST(_request: Request, ctx: { params: Promise<{ id: strin
 
       await recountComment(id, tx);
     });
-    await broadcastCommentCounts(comment.paperId, id);
     return NextResponse.json({ liked: true });
   } catch (error) {
     return errorFromUnknown(error);
@@ -81,7 +79,6 @@ export async function DELETE(_request: Request, ctx: { params: Promise<{ id: str
 
       await recountComment(id, tx);
     });
-    await broadcastCommentCounts(comment.paperId, id);
     return NextResponse.json({ liked: false });
   } catch (error) {
     return errorFromUnknown(error);

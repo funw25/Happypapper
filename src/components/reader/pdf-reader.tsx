@@ -17,7 +17,8 @@ import {
 } from "@/lib/comments/types";
 import { CommentCard } from "./comment-card";
 import { DanmakuPlayer } from "./danmaku-player";
-import type { RealtimeEvent } from "@/lib/realtime";
+import { PaperVisit } from "@/components/papers/paper-visit";
+import type { PaperEvent, ReaderEvent } from "@/lib/realtime-types";
 
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
@@ -86,6 +87,7 @@ export function PdfReader({
   const [reachNorm, setReachNorm] = useState(0);
   const [viewers, setViewers] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [accessRevoked, setAccessRevoked] = useState(false);
   const [geometry, setGeometry] = useState<PdfGeometry | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -100,6 +102,7 @@ export function PdfReader({
   const fetchRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    if (accessRevoked) return;
     let cancelled = false;
     setDoc(null);
     setStatus("loading");
@@ -125,7 +128,7 @@ export function PdfReader({
       cancelled = true;
       void task.destroy().catch(() => {}).finally(() => worker.destroy());
     };
-  }, [paperId, versionId, retryPdf]);
+  }, [paperId, versionId, retryPdf, accessRevoked]);
 
   const fitWidth = useCallback(async () => {
     if (!doc) return;
@@ -318,6 +321,13 @@ export function PdfReader({
 
   useEffect(() => {
     const source = new EventSource(`/api/papers/${paperId}/stream`);
+    let revision = -1n;
+    let initialized = false;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    const refreshComments = () => {
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => void loadCommentsRef.current(), 80);
+    };
 
     source.addEventListener("presence", (event) => {
       const payload = JSON.parse((event as MessageEvent<string>).data) as { viewers?: number };
@@ -325,23 +335,52 @@ export function PdfReader({
     });
 
     const refresh = (event: Event) => {
-      const detail: RealtimeEvent = JSON.parse((event as MessageEvent<string>).data);
+      const detail: PaperEvent = JSON.parse((event as MessageEvent<string>).data);
+      if (detail.paperId !== paperId || BigInt(detail.revision) <= revision) return;
+      revision = BigInt(detail.revision);
       danmakuEvents.dispatchEvent(new CustomEvent("comment", { detail }));
-      void loadCommentsRef.current();
+      if (detail.type === "comment.removed") {
+        const id = Number(detail.commentId);
+        setComments((value) => ({ ...value, roots: value.roots.filter((item) => item.id !== id),
+          replies: value.replies.filter((item) => item.id !== id && item.parentId !== id) }));
+      }
+      refreshComments();
     };
-    source.addEventListener("comment:new", refresh);
-    source.addEventListener("comment:update", refresh);
-    source.addEventListener("open", () => {
-      // This also runs after EventSource reconnects. Re-read authorized state
-      // to recover changes made while this reader was disconnected.
-      void loadCommentsRef.current();
+    for (const type of ["comment.created", "comment.updated", "comment.removed", "comment.metrics"]) {
+      source.addEventListener(type, refresh);
+    }
+    source.addEventListener("stream.ready", (event) => {
+      const state = JSON.parse((event as MessageEvent<string>).data) as { revision: string };
+      revision = BigInt(state.revision);
+      // The server subscription is live before this snapshot refresh, so
+      // mutations between the original REST read and subscription cannot vanish.
+      if (!initialized) {
+        initialized = true;
+        refreshComments();
+        danmakuEvents.dispatchEvent(new Event("connected"));
+      }
+    });
+    source.addEventListener("stream.reset", (event) => {
+      revision = BigInt(JSON.parse((event as MessageEvent<string>).data).revision);
+      refreshComments();
       danmakuEvents.dispatchEvent(new Event("connected"));
+    });
+    source.addEventListener("paper.access_changed", refreshComments);
+    source.addEventListener("paper.version_ready", () => router.refresh());
+    source.addEventListener("stream.revoked", () => {
+      source.close();
+      clearTimeout(refreshTimer);
+      fetchRef.current?.abort();
+      setComments({ roots: [], replies: [] });
+      setDoc(null);
+      setDraft(null);
+      setAccessRevoked(true);
     });
     source.addEventListener("error", () => danmakuEvents.dispatchEvent(new Event("disconnected")));
 
     // EventSource reconnects on its own; closing on unmount is all that is needed.
-    return () => source.close();
-  }, [paperId, danmakuEvents]);
+    return () => { source.close(); clearTimeout(refreshTimer); };
+  }, [paperId, danmakuEvents, router]);
 
   useEffect(() => {
     const stopSelection = () => setSelectingText(false);
@@ -491,7 +530,7 @@ export function PdfReader({
       setDanmakuText("");
       setDraft(null);
       setNotice(composerMode === "danmaku" ? "弹幕已发布" : "评论已发布");
-      if (payload.comment) danmakuEvents.dispatchEvent(new CustomEvent<RealtimeEvent>("comment", {
+      if (payload.comment) danmakuEvents.dispatchEvent(new CustomEvent<ReaderEvent>("comment", {
         detail: { type: "comment:new", comment: payload.comment as CommentDTO },
       }));
       window.getSelection()?.removeAllRanges();
@@ -509,8 +548,11 @@ export function PdfReader({
     : [];
   const draftLabel = draft?.type === "text" ? "原文选区" : draft?.type === "region" ? "区域" : draft?.type === "page" ? "本页" : "全文讨论";
 
+  if (accessRevoked) return <div className="p-8" role="alert">论文已不可用，阅读内容已清除。<Link href="/papers" className="ml-3 underline">返回论文库</Link></div>;
+
   return (
     <div className="relative flex h-full min-h-0">
+      <PaperVisit paperId={paperId} />
       <div className="flex min-w-0 flex-1 flex-col">
         {/* toolbar */}
         <div className="flex flex-wrap items-center gap-3 border-b border-[var(--paper-line)] bg-[var(--paper-surface)] px-4 py-2 text-sm">

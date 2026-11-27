@@ -398,8 +398,8 @@ await pusher.call(`/api/papers/${paper.id}/comments`, {
     anchor: ANCHOR,
   }),
 });
-const pushed = await readUntil(streamReader, (buffer) => buffer.includes("comment:new"));
-check("SSE 收到新评论推送", pushed.ok, pushed.buffer.includes("comment:new") ? "comment:new" : "no event");
+const pushed = await readUntil(streamReader, (buffer) => buffer.includes("comment.created"));
+check("SSE 收到新评论推送", pushed.ok, pushed.buffer.includes("comment.created") ? "comment.created" : "no event");
 streamAbort.abort();
 
 // pages

@@ -15,8 +15,16 @@ import {
   primaryKey,
   index,
   uniqueIndex,
+  customType,
+  date,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
+
+// Decimal strings preserve bigint revisions across HTTP boundaries.
+const revisionColumn = customType<{ data: string; driverData: string }>({
+  dataType: () => "bigint",
+  fromDriver: (value) => String(value),
+});
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -99,6 +107,7 @@ export const papers = pgTable(
     license: text("license"),
     visibility: text("visibility").notNull().default("public"),
     status: text("status").notNull().default("active"),
+    contentRevision: revisionColumn("content_revision").notNull().default("0"),
     defaultVersionId: uuid("default_version_id"),
     uploadedBy: uuid("uploaded_by").references(() => users.id, { onDelete: "set null" }),
     hasTextLayer: boolean("has_text_layer").notNull().default(true),
@@ -126,6 +135,15 @@ export const paperVersions = pgTable("paper_versions", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const paperEvents = pgTable("paper_events", {
+  paperId: uuid("paper_id").notNull().references(() => papers.id, { onDelete: "cascade" }),
+  revision: revisionColumn("revision").notNull(),
+  type: text("type").notNull(),
+  commentId: bigint("comment_id", { mode: "number" }),
+  paperVersionId: uuid("paper_version_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.paperId, t.revision] }), index("paper_events_retention_idx").on(t.createdAt)]);
+
 export const paperPages = pgTable("paper_pages", {
   versionId: uuid("version_id").notNull().references(() => paperVersions.id, { onDelete: "cascade" }),
   page: integer("page").notNull(),
@@ -135,6 +153,14 @@ export const paperPages = pgTable("paper_pages", {
   textStatus: text("text_status").notNull(),
   normalizedText: text("normalized_text").notNull(),
 }, (t) => [primaryKey({ columns: [t.versionId, t.page] })]);
+
+export const paperVisits = pgTable("paper_visits", {
+  paperId: uuid("paper_id").notNull().references(() => papers.id, { onDelete: "cascade" }),
+  visitDay: date("visit_day", { mode: "string" }).notNull(),
+  visitorKey: text("visitor_key").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.paperId, t.visitDay, t.visitorKey] }),
+  index("paper_visits_day_idx").on(t.visitDay, t.paperId)]);
 
 export const readingProgressByVersion = pgTable("reading_progress_by_version", {
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
@@ -207,6 +233,16 @@ export const commentLikes = pgTable(
   },
   (t) => [primaryKey({ columns: [t.userId, t.commentId] }), index("comment_likes_comment_idx").on(t.commentId)],
 );
+
+// Closed intervals preserve the state at a daily board's cutoff.
+export const commentLikeHistory = pgTable("comment_like_history", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  commentId: bigint("comment_id", { mode: "number" }).notNull().references(() => comments.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  endedAt: timestamp("ended_at", { withTimezone: true }),
+}, (t) => [index("comment_like_history_day_idx").on(t.createdAt, t.commentId),
+  uniqueIndex("comment_like_history_open_idx").on(t.commentId, t.userId).where(sql`${t.endedAt} is null`)]);
 
 export const reports = pgTable(
   "reports",

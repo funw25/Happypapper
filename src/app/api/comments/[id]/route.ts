@@ -6,7 +6,6 @@ import { currentUser } from "@/lib/session";
 import { errorFromUnknown, jsonError, PRIVATE_RESPONSE_HEADERS } from "@/lib/api";
 import { getComment, getVisibleCommentDTO, recountComment } from "@/lib/comments/queries";
 import { canModerate } from "@/lib/papers/access";
-import { broadcastCommentCounts } from "@/lib/comments/broadcast";
 import { lockComment } from "@/lib/comments/mutation";
 
 export async function GET(_request: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -39,7 +38,6 @@ export async function DELETE(_request: Request, ctx: { params: Promise<{ id: str
       await tx.update(comments).set({ status: "deleted" }).where(eq(comments.id, id));
       if (comment.parentId) await recountComment(comment.parentId, tx);
     });
-    await broadcastCommentCounts(comment.paperId, id);
 
     return NextResponse.json({ deleted: true });
   } catch (error) {

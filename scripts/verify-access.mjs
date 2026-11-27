@@ -128,10 +128,10 @@ await withVerificationRuntime(async ({ base, actors }) => {
     })).json()).comment;
     check(reply.page === 4 && reply.quote === root.quote, "回复以服务端父评论锚点为准");
     check(reply.viewer.isMine && reply.viewer.canDelete && reply.authorName === null && !("userId" in reply), "发布响应通过 viewer 表示本人操作并隐藏匿名作者");
-    await waitFor("fixture-anonymous-reply");
-    const posted = events.split("\n").find((line) => line.startsWith("data: ") && line.includes("fixture-anonymous-reply"));
-    const realtime = JSON.parse(posted.slice(6)).comment;
-    check(realtime.authorName === null && !realtime.viewer.isMine && !("userId" in realtime), "SSE 不暴露匿名作者或他人的操作权限");
+    await waitFor('"commentId":"' + reply.id + '"');
+    const posted = events.split("\n").find((line) => line.startsWith("data: ") && line.includes('"commentId":"' + reply.id + '"'));
+    const realtime = JSON.parse(posted.slice(6));
+    check(!events.includes("fixture-anonymous-reply") && !("authorName" in realtime) && !("viewer" in realtime) && !("userId" in realtime), "SSE 仅传 ID，不暴露正文、匿名作者或他人的操作权限");
 
     const listed = await (await status(a, publicComments + "?page=4", 200)).json();
     const listedReply = listed.replies.find((item) => item.id === reply.id);

@@ -17,6 +17,7 @@ export async function SiteHeader() {
           Happy<span className="text-[var(--paper-accent)]">Paper</span>
         </Link>
         <nav className="flex items-center gap-4 text-sm text-[var(--paper-muted)]">
+          <Link href="/discover" className="hover:text-[var(--paper-accent)]">发现</Link>
           <Link href="/papers" className="hover:text-[var(--paper-accent)]">
             论文库
           </Link>

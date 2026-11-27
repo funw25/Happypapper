@@ -7,14 +7,13 @@ import { comments, papers, users } from "@/db/schema";
 import { currentUser } from "@/lib/session";
 import { getPrivacySettings } from "@/lib/me/settings";
 import { errorFromUnknown, jsonError, PRIVATE_RESPONSE_HEADERS } from "@/lib/api";
-import { broadcast } from "@/lib/realtime";
 import { notifyReply } from "@/lib/notifications/queries";
 import { canInteract, canReadPaper, getReadablePaper } from "@/lib/papers/access";
 import { getPaperVersion } from "@/lib/papers/versions";
 import { codePointCount } from "@/lib/anchor-v2";
 import { anchorV2Schema, legacyAnchorSchema, resolveAnchor } from "@/lib/comments/anchors";
 import {
-  COMMENT_KINDS, CommentError, assertCanPost, commentViewer, getComment, getCommentDTO, listComments, recountComment,
+  COMMENT_KINDS, CommentError, assertCanPost, getComment, getCommentDTO, listComments, recountComment,
 } from "@/lib/comments/queries";
 
 const bodySchema = z.object({
@@ -89,10 +88,6 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     const saved = await db.transaction(async (tx) => {
       const [currentPaper] = await tx.select().from(papers).where(eq(papers.id, paper.id)).for("update");
       if (!canReadPaper(currentPaper, user.id)) throw new CommentError("NOT_FOUND", 404, "论文不可用");
-      const [actor] = await tx.select({ emailVerified: users.emailVerified }).from(users)
-        .where(eq(users.id, user.id)).for("update");
-      if (!actor?.emailVerified) throw new CommentError("EMAIL_UNVERIFIED", 403, "验证邮箱后即可发布评论");
-
       if (requestId) {
         const [previous] = await tx.select({ id: comments.id, status: comments.status, requestHash: comments.requestHash })
           .from(comments).where(and(eq(comments.userId, user.id), eq(comments.clientRequestId, requestId))).limit(1);
@@ -105,8 +100,12 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
 
       const [parent] = payload.parentId ? await tx.select().from(comments)
         .where(and(eq(comments.id, payload.parentId), eq(comments.paperId, paper.id), eq(comments.status, "visible")))
-        .limit(1) : [];
+        .for("update") : [];
       if (payload.parentId && !parent) throw new CommentError("NOT_FOUND", 404, "该回复目标不可用");
+
+      const [actor] = await tx.select({ emailVerified: users.emailVerified }).from(users)
+        .where(eq(users.id, user.id)).for("update");
+      if (!actor?.emailVerified) throw new CommentError("EMAIL_UNVERIFIED", 403, "验证邮箱后即可发布评论");
 
       await assertCanPost(user.id, payload.content, tx);
 
@@ -141,7 +140,6 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
 
     const dto = await getCommentDTO(saved.id, user.id);
     if (!dto) return jsonError("NOT_FOUND", 404);
-    if (saved.created) broadcast(paper.id, { type: "comment:new", comment: { ...dto, viewer: commentViewer(false) } });
     return NextResponse.json({ comment: dto }, { status: saved.created ? 201 : 200, headers: PRIVATE_RESPONSE_HEADERS });
   } catch (error) {
     if (error instanceof CommentError) return jsonError(error.code, error.status, error.message);

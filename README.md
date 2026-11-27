@@ -9,6 +9,10 @@
 
 弹幕阅读社区 V1 见 [实施规格](docs/06-danmaku-v1-implementation-plan.md) 与 [当前进度](docs/implementation-status.md)。
 
+顶部“发现”（`/discover`）提供累计榜和今日榜单：弹幕最多的论文、获赞最多的评论/弹幕、点击最多的论文。
+今日榜单以北京时间当天 00:00 为截止，统计前一日全天；例如 11 月 27 日展示 11 月 26 日数据。
+访问从功能上线后记录，打开详情或阅读器计为访问，同账号或访客同论文每日只计一次。页面先保持简单列表，UI 重设计后续单独推进。
+
 ## 运行
 
 不需要 Docker，也不需要单独安装数据库：PGlite 在进程内运行 Postgres。
@@ -114,6 +118,8 @@ npm run verify:reader         # 15 项，需要开发服务器 + 本机 Chrome/E
 npm run verify:reader-v1      # 27 项，自行启动隔离服务，需要本机 Chrome/Edge
 npm run verify:danmaku        # 全文弹幕的 API 与 Chrome/Edge 回归，自行启动隔离服务
 npm run verify:comment-mutations # 并发点赞、通知一致性与回复隐藏/恢复/删除计数
+npm run verify:realtime       # 持久事件、水位补发、进程重启、reset 和权限撤回，隔离数据库
+npm run verify:discover       # 榜单、北京时间边界、匿名/权限、访问去重与浏览器导航，隔离数据库
 npm run verify:settings       # 27 项，个人资料、密码、隐私设置与评论署名联动，需要开发服务器
 npm run verify:theme          # 8 项，三态主题与深色令牌，需要开发服务器 + 本机 Chrome/Edge
 npm run typecheck             # tsc --noEmit

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { SiteHeader } from "@/components/site-header";
 import { PaperActions } from "@/components/paper-actions";
 import { RetryPdfButton } from "@/components/papers/retry-pdf-button";
+import { PaperVisit } from "@/components/papers/paper-visit";
 import { currentUser } from "@/lib/session";
 import {
   paperAvailability,
@@ -38,6 +39,7 @@ export default async function PaperDetailPage({
   return (
     <>
       <SiteHeader />
+      <PaperVisit paperId={paper.id} />
       <main className="hp-page-narrow">
         <h1 className="text-2xl leading-snug font-semibold">{paper.title}</h1>
 
